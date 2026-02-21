@@ -1,16 +1,45 @@
-# React + Vite
+Team - Genuine
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Members: 
+Aayush Sharma, Daksh Mahajan
 
-Currently, two official plugins are available:
+Idea: High-quality education is free on YouTube but unstructured, our tool transforms any playlist/video into a complete course.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+# 🎓 OpenCourse
 
-## React Compiler
+> **Create Courses for Free. Learn Without Limits.**
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+OpenCourse is a platform designed to fix the fragmented way we learn online. It takes the chaos of YouTube playlists and transforms them into structured, distraction-free courses.
 
-## Expanding the ESLint configuration
+## 🚀 What Can You Do?
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+OpenCourse consolidates your entire study environment into one tab:
+
+* **📚 Turn Playlists into Courses:** Paste a YouTube playlist link, and we instantly generate a structured course curriculum for you.
+* **🤖 AI Doubt Solver:** Stuck on a concept? Ask our AI (powered by **Groq**) for instant, context-aware explanations without leaving the video.
+* **💻 Inbuilt Code Editor:** Watching a coding tutorial? Practice the code right there in the browser. No need to Alt-Tab.
+* **📝 Smart Notes:** Take organized notes that are linked to the video timestamps, helping you revise faster.
+* **✍️ Interactive Whiteboard:** Visual learner? Draw diagrams and map out concepts on a digital whiteboard just like a classroom.
+* **❓ Recommended Questions:** Test yourself with curated questions tailored to exactly what you're learning.
+* ** Companion Extension:** Auto sync your progress even when you watch the video on youtube.
+
+🗓️ Daily Planner: Track your daily progress and stay consistent with your learning schedule.
+
+## 🛠️ The Tech Behind It
+
+### Frontend 
+
+React.js, Tailwind CSS, Monaco Editor, Plyr
+
+### Backend (The Brains)
+
+Node.js, Express.js, MongoDB, JWT, Bcrypt
+
+### External APIs
+
+Youtube Data API v3, Piston API, Groq, YoutubeTranscriptPlus
+
+
+
+
+readme
