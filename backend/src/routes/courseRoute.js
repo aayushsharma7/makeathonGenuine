@@ -1,15 +1,17 @@
 import express from "express"
-import { courseController, getAi,getVideoNotes,getSummary,updateLastPlayedCourse,getRecommendedProblems, getCourse,updateVideoNotes,deleteVideoNotes, getCourseData, getSingleCourse, getVideo, updateCourseProgess, updateVideoProgess } from "../controllers/course.controller.js";
+import { addVideosToCourseController, courseController, createCustomCourseController, getAi,getVideoNotes,getSummary,updateLastPlayedCourse,getRecommendedProblems, getCourse,updateVideoNotes,deleteVideoNotes, getCourseData, getSingleCourse, getVideo, updateCourseProgess, updateVideoProgess } from "../controllers/course.controller.js";
 import { authCheck } from "../middlewares/authCheck.js";
 
 const router = express.Router()
 
 router.post('/create', authCheck, courseController);
+router.post('/create/custom', authCheck, createCustomCourseController);
+router.post('/add-videos', authCheck, addVideosToCourseController);
 
 router.get('/', authCheck, getCourse);
 router.get('/getCourse/:id', authCheck, getSingleCourse);
 
-router.get('/data/:id', getCourseData);
+router.get('/data/:id', authCheck, getCourseData);
 router.post('/update/course',authCheck, updateCourseProgess);
 router.post('/update/lastplayedcourse',authCheck, updateLastPlayedCourse);
 router.post('/update/video',authCheck, updateVideoProgess)

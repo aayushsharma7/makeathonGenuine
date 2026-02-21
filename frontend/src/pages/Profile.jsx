@@ -1,9 +1,11 @@
 import React from 'react'
-import { BookOpen, Clock, Trophy, Settings, Share2, Flame } from 'lucide-react'
+import { BookOpen, Clock, Trophy, Share2, Flame } from 'lucide-react'
 import { useState , useEffect } from 'react';
 import axios from "axios";
+import { useNavigate } from "react-router-dom";
 
 const Profile = () => {
+  const navigate = useNavigate();
   // Mock Data for Stats
   const [user , setUser] = useState(null);
   const [coursesCreated, setCoursesCreated] = useState(null);
@@ -18,65 +20,44 @@ const Profile = () => {
     y: 0,
     date: ""
   });
-
-
-
-const [streak, setStreak] = useState(0);
-
-  useEffect(() => {
-  if (user) {
-    const currentStreak = calculateStreak();
-    setStreak(currentStreak);
-  }
-}, [user]);
-
-  // to calculate streak
-  const calculateStreak = () => {
+// to calculate streak
+function calculateStreak() {
   if (!user) return 0;
 
-  let streak = 0;
+  let streakCount = 0;
   let currentDate = new Date(); 
 
   while (true) {
     const dateKey = currentDate.toDateString(); 
     
     if (localStorage.getItem(dateKey)) {
-      streak++;
-      
+      streakCount++;
       currentDate.setDate(currentDate.getDate() - 1);
     } else {
       break; 
     }
   }
-  return streak;
-};
+  return streakCount;
+}
+
+const streak = user ? calculateStreak() : 0;
 
 //courses created 
 useEffect(() => {
   if (!user){
     return;
   }
-  getUserData();
-},[user]);
-
-  
-  const stats = [
-    { label: 'Courses Created', value: coursesCreated, icon: BookOpen, color: 'text-blue-400' },
-    { label: 'Lessons Completed', value:`${hoursLearned} / ${totalVideosCreated}`, icon: Clock, color: 'text-amber-400' },
-    { label: 'Completion Rate', value:`${completionRate}%`, icon: Trophy, color: 'text-emerald-400' },
-    { label: 'Current Streak', value:`${streak} days`, icon: Flame, color: 'text-orange-500' },
-  ]
-
   const getUserData = async () => {
     try {
       const data = await axios.get(`${import.meta.env.VITE_API_URL}/course`, {
         withCredentials: true,
       });
       if (data.status === 200) {
-        setCoursesCreated(data.data.length);
+        const coursesData = data.data?.data || [];
+        setCoursesCreated(coursesData.length);
         let vidsComp = 0;
         let totalVideos = 0;
-        data.data.map((e,idx) => {
+        coursesData.forEach((e) => {
           vidsComp = vidsComp + e.completedVideos.length-1;
           totalVideos = totalVideos + e.totalVideos;
         })
@@ -90,6 +71,16 @@ useEffect(() => {
       console.log(error);
     }
   };
+  getUserData();
+},[user]);
+
+  
+  const stats = [
+    { label: 'Courses Created', value: coursesCreated, icon: BookOpen, color: 'text-blue-400' },
+    { label: 'Lessons Completed', value:`${hoursLearned} / ${totalVideosCreated}`, icon: Clock, color: 'text-amber-400' },
+    { label: 'Completion Rate', value:`${completionRate}%`, icon: Trophy, color: 'text-emerald-400' },
+    { label: 'Current Streak', value:`${streak} days`, icon: Flame, color: 'text-orange-500' },
+  ]
 
   // Mock Data for Heatmap (364 days for a full grid look)
   // 0 = empty, 1-4 = intensity levels
@@ -102,22 +93,28 @@ useEffect(() => {
   
   // for profile data
   
-  useEffect(() => {    
+useEffect(() => {    
   const fetchUser = async () => {
     try {
       const res = await axios.get(
         "http://localhost:3000/auth/check",
         { withCredentials: true }
       );
-      setUser(res.data.info);
-    } catch (err) {
+      if(res.data?.success){
+        setUser(res.data?.data);
+      }
+      else{
+        navigate("/login");
+      }
+    } catch {
       console.log("User not logged in");
+      navigate("/login");
     }
   };
 
   fetchUser();
   
-}, []);
+}, [navigate]);
 
 useEffect(() => {
   if (user) {
@@ -149,7 +146,7 @@ const getHeatmapColor = (level) => {
       default: return 'bg-neutral-800/50';
     }
   };
-const experienceLevel=(hours)=>{
+const experienceLevel=()=>{
   if(coursesCreated < 5) return "Beginner";
   else if(coursesCreated>=5 && coursesCreated<=10) return "Intermediate";
   else if(coursesCreated>30 && coursesCreated <=45) return "Advanced";

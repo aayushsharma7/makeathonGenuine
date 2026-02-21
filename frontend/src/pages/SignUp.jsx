@@ -1,8 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { Link, useNavigate } from "react-router-dom";
-import { User, Mail, Lock, ArrowRight, Github, Chrome } from "lucide-react";
+import { User, Mail, Lock, ArrowRight } from "lucide-react";
 import axios from 'axios';
-import Navbar from '../components/Navbar';
 
 const SignUp = () => {
 
@@ -12,20 +11,16 @@ const SignUp = () => {
     const [resp, setResp] = useState("")
 
     const navigate = useNavigate();
-    const [isLoggedIn, setIsLoggedIn] = useState(false);
     const checkAuth = async () => {
       try {
         const responsePost = await axios.get(`${import.meta.env.VITE_API_URL}/auth/check`, {
           withCredentials: true,
         });
-        if (responsePost.data.code === 200) {
-          setIsLoggedIn(true);
+        if (responsePost.data?.success) {
           navigate("/courses");
-        } else {
-          setIsLoggedIn(false);
         }
-      } catch (error) {
-        console.log(error);
+      } catch {
+        console.log("Not logged in");
       }
     };
 
@@ -51,12 +46,21 @@ const SignUp = () => {
             email,
             password
         }
-        const apiRes = await axios.post(`${import.meta.env.VITE_API_URL}/auth/signup`,payload);
-        setResp(apiRes);
-        console.log(apiRes.data.code, apiRes.data.message);
-        if(apiRes?.data?.code === 200){
-          navigate('/login')
-        } 
+        try {
+          const apiRes = await axios.post(`${import.meta.env.VITE_API_URL}/auth/signup`,payload);
+          setResp(apiRes);
+          console.log(apiRes.data.code, apiRes.data.message);
+          if(apiRes?.data?.success){
+            navigate('/login')
+          }
+        } catch (error) {
+          setResp(error.response || {
+            data: {
+              code: 500,
+              message: "Signup failed"
+            }
+          });
+        }
     }
 
   return (
@@ -160,8 +164,8 @@ const SignUp = () => {
 
           </form>
           {resp?.data?.code ? <div className="mt-4 text-center">
-             <p className={`${resp?.data?.code === 200 ? 'text-green-500':'text-red-500'} text-sm font-medium`}>
-               {resp?.data?.code === 200 ? '': `${resp?.data?.code}:`} {resp?.data?.message}
+             <p className={`${resp?.data?.success ? 'text-green-500':'text-red-500'} text-sm font-medium`}>
+               {resp?.data?.success ? '': `${resp?.data?.code}:`} {resp?.data?.message}
              </p>
           </div>: ''}
           

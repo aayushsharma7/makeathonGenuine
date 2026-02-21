@@ -2,21 +2,14 @@ import React, { useEffect, useState } from "react";
 import {
   Plus,
   Play,
-  MoreVertical,
-  Clock,
   User,
-  Zap,
-  LogOutIcon,
-  LogInIcon,
 } from "lucide-react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import axios from "axios";
-import Navbar from "../components/Navbar";
 
 const HomePage = () => {
   const [courses, setCourses] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [infor, setInfor] = useState({});
   const [lastCoursePlayed, setLastCoursePlayed] = useState("none");
 
@@ -26,18 +19,17 @@ const HomePage = () => {
         withCredentials: true,
       });
       // console.log(responsePost.data);
-      if (responsePost.data.code === 200) {
-        setIsLoggedIn(true);
-        setInfor(responsePost.data.info);
+      if (responsePost.data?.success) {
+        setInfor(responsePost.data.data || {});
         // console.log(responsePost.data.info)
-        const lastPlayed = localStorage.getItem('last_course_played') || responsePost.data.info.lastCoursePlayed;
+        const lastPlayed = localStorage.getItem('last_course_played') || responsePost.data?.data?.lastCoursePlayed;
         setLastCoursePlayed(lastPlayed);
       } else {
-        setIsLoggedIn(false);
         navigate("/signup");
       }
     } catch (error) {
       console.log(error);
+      navigate("/login");
     }
   };
 
@@ -52,7 +44,8 @@ const HomePage = () => {
         withCredentials: true,
       });
       if (data.status === 200) {
-        setCourses(data.data.reverse());
+        const courseList = data.data?.data || [];
+        setCourses([...courseList].reverse());
         
         
         // console.log(data.data);
@@ -80,7 +73,7 @@ const HomePage = () => {
 
   const handleLastPlayedCourse = async (courseId) => {
     try {
-      const apiRes = await axios.post(`${import.meta.env.VITE_API_URL}/course/update/lastplayedcourse`,{
+      await axios.post(`${import.meta.env.VITE_API_URL}/course/update/lastplayedcourse`,{
         courseId
       },{
         withCredentials: true
@@ -321,12 +314,34 @@ const HomePage = () => {
           </div>
 
           {/* New Ingestion Button (Styled like CreateCourse submit) */}
-          <h1 className="text-xl md:text-2xl font-black text-white tracking-tight leading-[0.9]">
-            Welcome,{" "}
-            <span className="text-transparent bg-clip-text bg-linear-to-r from-[#2563EB] via-white to-zinc-500">
-              {infor.username}!
-            </span>
-          </h1>
+          <div className="flex flex-col md:items-end gap-3">
+            <h1 className="text-xl md:text-2xl font-black text-white tracking-tight leading-[0.9]">
+              Welcome,{" "}
+              <span className="text-transparent bg-clip-text bg-linear-to-r from-[#2563EB] via-white to-zinc-500">
+                {infor.username}!
+              </span>
+            </h1>
+            <div className="flex flex-wrap justify-start md:justify-end gap-2">
+              <Link
+                to="/onboarding"
+                className="text-xs font-bold px-3 py-2 border border-white/15 rounded-sm text-zinc-300 hover:text-white hover:border-[#2563EB]/60 transition-colors"
+              >
+                Start With Onboarding
+              </Link>
+              <Link
+                to="/create"
+                className="text-xs font-bold px-3 py-2 border border-white/15 rounded-sm text-zinc-300 hover:text-white hover:border-[#2563EB]/60 transition-colors"
+              >
+                Create From Playlist
+              </Link>
+              <Link
+                to="/create?type=custom"
+                className="text-xs font-bold px-3 py-2 border border-white/15 rounded-sm text-zinc-300 hover:text-white hover:border-[#2563EB]/60 transition-colors"
+              >
+                Create Custom Course
+              </Link>
+            </div>
+          </div>
 
           {/* <Link to={`/create`} className="group relative inline-flex">
                   <button className=" relative inline-flex items-center justify-center px-8 py-4 text-base font-black text-black transition-all duration-200 bg-[#DEFF0A] font-pj rounded-xl focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-900 hover:bg-[#CBEA00] active:scale-[0.98]">
@@ -438,12 +453,15 @@ const HomePage = () => {
                               {`${Math.floor(((course.completedVideos.length-1)/course.totalVideos)*100)}%`}
                             </span>
                           </div>
-                <div className="mt-6 pt-4 border-t border-white/5 flex items-center justify-between">
+                <div className="mt-6 pt-4 border-t border-white/5 flex flex-wrap items-center gap-2 justify-between">
                   <span className="text-[13px] font-bold text-zinc-500 group-hover:text-zinc-300 transition-colors">
                     Lesson: {Number(localStorage.getItem(`last_video_played_${course._id}`))+1}
                   </span>
                   <span className="text-[13px] font-bold text-zinc-500 group-hover:text-zinc-300 transition-colors">
                     Total Videos: {course.totalVideos}
+                  </span>
+                  <span className="text-[13px] font-bold text-zinc-500 group-hover:text-zinc-300 transition-colors">
+                    Modules: {course.learningModules?.length || 0}
                   </span>
                   {/* <span className="text-[11px] font-black text-[#2563EB] tracking-wider uppercase opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300">
                     {course.progress > 0 ? "RESUME >" : "START >"}
@@ -575,12 +593,15 @@ const HomePage = () => {
                               {`${Math.floor(((course.completedVideos.length -1)/course.totalVideos)*100)}%`}
                             </span>
                           </div>
-                <div className="mt-6 pt-4 border-t border-white/5 flex items-center justify-between">
+                <div className="mt-6 pt-4 border-t border-white/5 flex flex-wrap items-center gap-2 justify-between">
                   <span className="text-[13px] font-bold text-zinc-500 group-hover:text-zinc-300 transition-colors">
                     Lesson: {Number(localStorage.getItem(`last_video_played_${course._id}`))+1}
                   </span>
                   <span className="text-[13px] font-bold text-zinc-500 group-hover:text-zinc-300 transition-colors">
                     Total Videos: {course.totalVideos}
+                  </span>
+                  <span className="text-[13px] font-bold text-zinc-500 group-hover:text-zinc-300 transition-colors">
+                    Modules: {course.learningModules?.length || 0}
                   </span>
                   {/* <span className="text-[11px] font-black text-[#2563EB] tracking-wider uppercase opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300">
                     {course.progress > 0 ? "RESUME >" : "START >"}

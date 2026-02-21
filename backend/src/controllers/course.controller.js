@@ -11,13 +11,266 @@ import { Transcript } from "../models/transcript.model.js";
 import { Problems } from "../models/problems.model.js";
 import { Summary } from "../models/summary.model.js";
 import { User } from "../models/user.model.js";
+import { sendError, sendSuccess } from "../utils/apiResponse.js";
 
+
+const normalizeTopics = (rawTopics = "") => {
+    if(Array.isArray(rawTopics)){
+        return rawTopics.map((topic) => topic.toLowerCase().trim()).filter(Boolean);
+    }
+    return `${rawTopics}`.split(",").map((topic) => topic.toLowerCase().trim()).filter(Boolean);
+}
+
+const parseIsoDurationToMinutes = (isoDuration = "PT0S") => {
+    const match = isoDuration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+    if(!match){
+        return 0;
+    }
+    const hours = parseInt(match[1] || "0", 10);
+    const minutes = parseInt(match[2] || "0", 10);
+    const seconds = parseInt(match[3] || "0", 10);
+    return (hours * 60) + minutes + Math.ceil(seconds / 60);
+}
+
+const extractTopicTags = (title = "", description = "", knownTopics = []) => {
+    const text = `${title} ${description}`.toLowerCase();
+    const keywordPool = [
+        "introduction", "setup", "basics", "fundamentals", "variables", "loops", "functions",
+        "arrays", "strings", "objects", "classes", "inheritance", "recursion", "sorting",
+        "searching", "linked list", "stack", "queue", "tree", "graph", "dynamic programming",
+        "react", "node", "express", "mongodb", "sql", "api", "authentication", "deployment"
+    ];
+
+    const tags = [];
+    for (const topic of knownTopics) {
+        if(topic && text.includes(topic)){
+            tags.push(topic);
+        }
+    }
+    for (const keyword of keywordPool) {
+        if(text.includes(keyword) && !tags.includes(keyword)){
+            tags.push(keyword);
+        }
+    }
+
+    if(tags.length === 0){
+        const firstWords = title.toLowerCase().split(" ").filter((w) => w.length > 3).slice(0,2);
+        return firstWords.length ? firstWords : ["general"];
+    }
+
+    return tags.slice(0,3);
+}
+
+const buildRecommendation = ({topicTags, knownTopics, codingConfidence, goalUrgency, learningStyle}) => {
+    const knownSet = new Set((knownTopics || []).map((topic) => topic.toLowerCase()));
+    const isKnownTopic = topicTags.some((tag) => knownSet.has(tag.toLowerCase()));
+    const confidence = parseInt(codingConfidence || "3", 10);
+    const urgency = `${goalUrgency || ""}`.toLowerCase();
+    const style = `${learningStyle || ""}`.toLowerCase();
+
+    if(isKnownTopic && confidence >= 4){
+        return {
+            action: urgency.includes("high") ? "skip" : "watch_2x",
+            reason: urgency.includes("high")
+                ? "Topic already known and urgency is high."
+                : "Topic already known, you can revise quickly at 2x."
+        };
+    }
+
+    if(isKnownTopic && confidence >= 3){
+        return {
+            action: "watch_quick",
+            reason: "You have prior exposure, so a quick revision is enough."
+        };
+    }
+
+    if(style.includes("deep")){
+        return {
+            action: "watch",
+            reason: "New topic and deep learning style selected."
+        };
+    }
+
+    return {
+        action: urgency.includes("high") ? "watch_2x" : "watch",
+        reason: urgency.includes("high")
+            ? "Recommended 2x to maintain pace while covering new content."
+            : "Recommended full watch for better understanding."
+    };
+}
+
+const buildPace = ({timePerDay, goalUrgency}) => {
+    const timeText = `${timePerDay || ""}`.toLowerCase();
+    const urgency = `${goalUrgency || ""}`.toLowerCase();
+    if(urgency.includes("high") || timeText.includes("30")){
+        return "Fast";
+    }
+    if(timeText.includes("1") || timeText.includes("2")){
+        return "Balanced";
+    }
+    return "Deep";
+}
+
+const getPlaylistIdFromUrl = (url = "") => {
+    if(!url){
+        return "";
+    }
+    const parsed = `${url}`.split("list=")[1];
+    if(!parsed){
+        return "";
+    }
+    return parsed.split("&")[0] || "";
+}
+
+const extractYoutubeVideoId = (url = "") => {
+    const safeUrl = `${url}`.trim();
+    if(!safeUrl){
+        return "";
+    }
+
+    const watchMatch = safeUrl.match(/[?&]v=([a-zA-Z0-9_-]{11})/);
+    if(watchMatch?.[1]){
+        return watchMatch[1];
+    }
+
+    const shortMatch = safeUrl.match(/youtu\.be\/([a-zA-Z0-9_-]{11})/);
+    if(shortMatch?.[1]){
+        return shortMatch[1];
+    }
+
+    const embedMatch = safeUrl.match(/(?:embed|shorts)\/([a-zA-Z0-9_-]{11})/);
+    if(embedMatch?.[1]){
+        return embedMatch[1];
+    }
+
+    if(/^[a-zA-Z0-9_-]{11}$/.test(safeUrl)){
+        return safeUrl;
+    }
+
+    return "";
+}
+
+const getDurationDisplay = (isoDuration = "") => {
+    if(!isoDuration){
+        return "0:00";
+    }
+    const duration = isoDuration.replace("PT", "").replace("H", ":").replace("M", ":").replace("S", "");
+    return duration.endsWith(":") ? `${duration}00` : duration;
+}
+
+const getYouTubeVideosMeta = async (videoIds = []) => {
+    if(!videoIds.length){
+        return [];
+    }
+
+    const chunks = [];
+    for(let i = 0; i < videoIds.length; i += 50){
+        chunks.push(videoIds.slice(i, i + 50));
+    }
+
+    const responses = await Promise.all(
+        chunks.map((chunk) =>
+            axios.get(`https://www.googleapis.com/youtube/v3/videos`, {
+                params: {
+                    key: process.env.YT_API_KEY,
+                    part: "snippet,contentDetails,statistics",
+                    id: chunk.join(","),
+                    maxResults: 50
+                }
+            })
+        )
+    );
+
+    return responses.flatMap((res) => res?.data?.items || []);
+}
+
+const buildVideoDocFromYoutubeMeta = ({
+    courseId,
+    owner,
+    item,
+    personalization = {},
+    knownTopics = [],
+    moduleOverride = ""
+}) => {
+    const snippet = item?.snippet || {};
+    const contentDetails = item?.contentDetails || {};
+    const title = snippet?.title || "Untitled Video";
+    const description = snippet?.description || "";
+    const topicTags = extractTopicTags(title, description, knownTopics);
+    const recommendation = buildRecommendation({
+        topicTags,
+        knownTopics,
+        codingConfidence: personalization.codingConfidence,
+        goalUrgency: personalization.goalUrgency,
+        learningStyle: personalization.learningStyle
+    });
+    const moduleTitle = moduleOverride || (topicTags[0] ? `Module: ${topicTags[0].toUpperCase()}` : "Module: GENERAL");
+    const durationIso = contentDetails?.duration || "PT0S";
+    const durationMinutes = parseIsoDurationToMinutes(durationIso);
+
+    return {
+        playlist: courseId,
+        title,
+        description,
+        channelId: snippet?.channelId || "",
+        channelTitle: snippet?.channelTitle || "",
+        thumbnail: snippet?.thumbnails?.maxres?.url || snippet?.thumbnails?.standard?.url || snippet?.thumbnails?.high?.url || snippet?.thumbnails?.default?.url || "",
+        videoId: item?.id || snippet?.resourceId?.videoId || "",
+        duration: durationIso,
+        progressTime: 0,
+        totalDuration: 0,
+        completed: false,
+        owner,
+        topicTags,
+        recommendationAction: recommendation.action,
+        recommendationReason: recommendation.reason,
+        moduleTitle,
+        priorityScore: Math.max(10, 100 - (durationMinutes * 2))
+    };
+}
+
+const syncCourseLearningModules = async (courseId) => {
+    const videosAll = await Video.find({ playlist: courseId }).sort({ createdAt: 1 });
+    const moduleMap = {};
+
+    videosAll.forEach((videoDoc) => {
+        if(!moduleMap[videoDoc.moduleTitle]){
+            moduleMap[videoDoc.moduleTitle] = {
+                title: videoDoc.moduleTitle,
+                topic: videoDoc.topicTags?.[0] || "general",
+                videos: [],
+                estimatedMinutes: 0,
+                milestone: ""
+            };
+        }
+        moduleMap[videoDoc.moduleTitle].videos.push(videoDoc._id);
+        moduleMap[videoDoc.moduleTitle].estimatedMinutes += parseIsoDurationToMinutes(videoDoc.duration);
+    });
+
+    const modules = Object.values(moduleMap).map((moduleItem, idx) => ({
+        ...moduleItem,
+        milestone: `Complete ${moduleItem.title} (${idx + 1}/${Object.keys(moduleMap).length})`
+    }));
+
+    await Course.findByIdAndUpdate(courseId, {
+        videos: videosAll.map((item) => item._id),
+        learningModules: modules,
+        totalVideos: videosAll.length
+    });
+
+    return modules;
+}
 
 
 export const courseController = async (req,res) => {
     try {
-
-        const playlistID = await req.body.url.split('list=')[1];
+        const playlistID = getPlaylistIdFromUrl(req.body.url);
+        if(!playlistID){
+            return sendError(res, 400, "Invalid playlist URL");
+        }
+        const personalization = req.body.personalization || {};
+        const knownTopics = normalizeTopics(personalization.knownTopics || []);
+        const recommendedPace = buildPace(personalization);
         const checkArr = await Course.find({
             playlistId: playlistID,
             owner: req.user.username
@@ -78,25 +331,57 @@ export const courseController = async (req,res) => {
                 owner: req.user.username,
                 thumbnail: courseData.data.items[0].snippet.thumbnails.maxres?.url || courseData.data.items[0].snippet.thumbnails.standard?.url || courseData.data.items[0].snippet.thumbnails.high?.url || courseData.data.items[0].snippet.thumbnails.default?.url,
                 completedVideos: [-1],
-                lastVideoPlayed: 0
+                lastVideoPlayed: 0,
+                recommendedPace,
+                onboardingPath: req.body.onboardingPath || "direct",
+                personalizationProfile: {
+                    experienceLevel: personalization.experienceLevel || "",
+                    timePerDay: personalization.timePerDay || "",
+                    learningStyle: personalization.learningStyle || "",
+                    goalUrgency: personalization.goalUrgency || "",
+                    codingConfidence: personalization.codingConfidence || "",
+                    priorExposure: personalization.priorExposure || "",
+                    targetGoal: personalization.targetGoal || "",
+                    knownTopics
+                },
+                learningModules: []
             })
-            newCourse.save();
+            await newCourse.save();
 
             const videoArray = courseData.data.items.filter((e) => e.snippet.title !== "Deleted video" && e.snippet.title !== "Private video").map((vid,idx) => { //array of vid objects
+                const title = vid.snippet.title ?? "No title";
+                const description = vid.snippet.description ?? "No description";
+                const topicTags = extractTopicTags(title, description, knownTopics);
+                const recommendation = buildRecommendation({
+                    topicTags,
+                    knownTopics,
+                    codingConfidence: personalization.codingConfidence,
+                    goalUrgency: personalization.goalUrgency,
+                    learningStyle: personalization.learningStyle
+                });
+                const moduleTitle = topicTags[0] ? `Module: ${topicTags[0].toUpperCase()}` : "Module: GENERAL";
+                const durationIso = videoData.data?.items?.[idx]?.contentDetails?.duration ?? "PT0S";
+                const durationMinutes = parseIsoDurationToMinutes(durationIso);
+
                 return {
                     playlist: newCourse._id,
-                    title:vid.snippet.title ?? "No title",  // ?? is nullish check basically provides default value incase its null/undefined
-                    description:vid.snippet.description ?? "No description",
+                    title,
+                    description,
                     channelId:vid.snippet.channelId,
                     channelTitle:vid.snippet.channelTitle,
                     thumbnail:vid.snippet.thumbnails.maxres?.url || vid.snippet.thumbnails.standard?.url || vid.snippet.thumbnails.high?.url || vid.snippet.thumbnails.default?.url,
                     //maxres wasnt available in some vids so set OR
                     videoId:vid.snippet.resourceId.videoId,
-                    duration:videoData.data?.items?.[idx]?.contentDetails?.duration ?? "PT0S",
+                    duration: durationIso,
                     progressTime: 0,
                     totalDuration: 0,
                     completed: false,
-                    owner: req.user.username
+                    owner: req.user.username,
+                    topicTags,
+                    recommendationAction: recommendation.action,
+                    recommendationReason: recommendation.reason,
+                    moduleTitle,
+                    priorityScore: Math.max(10, 100 - (durationMinutes * 2))
                 }
             })
 
@@ -106,79 +391,248 @@ export const courseController = async (req,res) => {
                 return vid._id;
             })
             
-            const updatedCourse  = await Course.findByIdAndUpdate(newCourse._id, {
-                videos: videoIDs
+            const moduleMap = {};
+            videosAll.forEach((videoDoc) => {
+                if(!moduleMap[videoDoc.moduleTitle]){
+                    moduleMap[videoDoc.moduleTitle] = {
+                        title: videoDoc.moduleTitle,
+                        topic: videoDoc.topicTags?.[0] || "general",
+                        videos: [],
+                        estimatedMinutes: 0,
+                        milestone: ""
+                    };
+                }
+                moduleMap[videoDoc.moduleTitle].videos.push(videoDoc._id);
+                moduleMap[videoDoc.moduleTitle].estimatedMinutes += parseIsoDurationToMinutes(videoDoc.duration);
+            });
+
+            const modules = Object.values(moduleMap).map((moduleItem, idx) => ({
+                ...moduleItem,
+                milestone: `Complete ${moduleItem.title} (${idx + 1}/${Object.keys(moduleMap).length})`
+            }));
+
+            await Course.findByIdAndUpdate(newCourse._id, {
+                videos: videoIDs,
+                learningModules: modules
             })
 
-            res.status(200).send(`Course created successfully` );
+            return sendSuccess(res, 201, "Course created successfully", {
+                courseId: newCourse._id,
+                modulesCount: modules.length
+            });
         }
         else{
-            res.status(409).send("Already Exists");
             console.log("Course not created: Already Exists");
+            return sendError(res, 409, "Already Exists");
         }
 
     } catch (error) {
-        res.status(400).send("Error occured")
         console.log("error: ",error)
+        return sendError(res, 500, "Error occured", error.message)
     }
 }
 
+export const createCustomCourseController = async (req, res) => {
+    try {
+        const {
+            name = "",
+            videoUrls = [],
+            personalization = {},
+            onboardingPath = "direct"
+        } = req.body;
+
+        if(!name.trim()){
+            return sendError(res, 400, "Course title is required");
+        }
+        if(!Array.isArray(videoUrls) || videoUrls.length === 0){
+            return sendError(res, 400, "At least one YouTube video URL is required");
+        }
+        if(!process.env.YT_API_KEY){
+            return sendError(res, 500, "YouTube API key is missing");
+        }
+
+        const extractedVideoIds = Array.from(new Set(
+            videoUrls.map((url) => extractYoutubeVideoId(url)).filter(Boolean)
+        ));
+        if(extractedVideoIds.length === 0){
+            return sendError(res, 400, "No valid YouTube video URLs were provided");
+        }
+
+        const knownTopics = normalizeTopics(personalization.knownTopics || []);
+        const recommendedPace = buildPace(personalization);
+        const videosMeta = await getYouTubeVideosMeta(extractedVideoIds);
+
+        if(!videosMeta.length){
+            return sendError(res, 404, "Could not fetch metadata for provided videos");
+        }
+
+        const validVideosMeta = videosMeta.filter((item) => (item?.contentDetails?.duration || "PT0S") !== "PT0S");
+        if(!validVideosMeta.length){
+            return sendError(res, 400, "No playable videos found in provided URLs");
+        }
+
+        const fallbackThumbnail = validVideosMeta?.[0]?.snippet?.thumbnails?.high?.url || validVideosMeta?.[0]?.snippet?.thumbnails?.default?.url || "";
+        const uniquePlaylistId = `custom_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+
+        const newCourse = new Course({
+            title: name,
+            playlistId: uniquePlaylistId,
+            totalVideos: validVideosMeta.length,
+            videos: [],
+            owner: req.user.username,
+            thumbnail: fallbackThumbnail,
+            completedVideos: [-1],
+            lastVideoPlayed: 0,
+            recommendedPace,
+            onboardingPath,
+            personalizationProfile: {
+                experienceLevel: personalization.experienceLevel || "",
+                timePerDay: personalization.timePerDay || "",
+                learningStyle: personalization.learningStyle || "",
+                goalUrgency: personalization.goalUrgency || "",
+                codingConfidence: personalization.codingConfidence || "",
+                priorExposure: personalization.priorExposure || "",
+                targetGoal: personalization.targetGoal || "",
+                knownTopics
+            },
+            learningModules: []
+        });
+        await newCourse.save();
+
+        const customVideos = validVideosMeta.map((item) => buildVideoDocFromYoutubeMeta({
+            courseId: newCourse._id,
+            owner: req.user.username,
+            item,
+            personalization,
+            knownTopics,
+            moduleOverride: "Module: CUSTOM ADDED"
+        }));
+
+        await Video.insertMany(customVideos);
+        const modules = await syncCourseLearningModules(newCourse._id);
+
+        return sendSuccess(res, 201, "Custom course created successfully", {
+            courseId: newCourse._id,
+            modulesCount: modules.length
+        });
+    } catch (error) {
+        console.log(error);
+        return sendError(res, 500, "Failed to create custom course", error.message);
+    }
+}
+
+export const addVideosToCourseController = async (req, res) => {
+    try {
+        const { courseId = "", videoUrls = [] } = req.body;
+
+        if(!courseId){
+            return sendError(res, 400, "Course ID is required");
+        }
+        if(!Array.isArray(videoUrls) || videoUrls.length === 0){
+            return sendError(res, 400, "At least one YouTube video URL is required");
+        }
+        if(!process.env.YT_API_KEY){
+            return sendError(res, 500, "YouTube API key is missing");
+        }
+
+        const course = await Course.findOne({ _id: courseId, owner: req.user.username });
+        if(!course){
+            return sendError(res, 404, "Course not found");
+        }
+
+        const extractedVideoIds = Array.from(new Set(
+            videoUrls.map((url) => extractYoutubeVideoId(url)).filter(Boolean)
+        ));
+        if(extractedVideoIds.length === 0){
+            return sendError(res, 400, "No valid YouTube video URLs were provided");
+        }
+
+        const existingVideos = await Video.find({
+            playlist: courseId,
+            videoId: { $in: extractedVideoIds }
+        }).select("videoId");
+        const existingSet = new Set(existingVideos.map((item) => item.videoId));
+        const uniqueNewVideoIds = extractedVideoIds.filter((videoId) => !existingSet.has(videoId));
+        if(uniqueNewVideoIds.length === 0){
+            return sendError(res, 409, "All provided videos already exist in this course");
+        }
+
+        const videosMeta = await getYouTubeVideosMeta(uniqueNewVideoIds);
+        const knownTopics = normalizeTopics(course?.personalizationProfile?.knownTopics || []);
+
+        const validVideosMeta = videosMeta.filter((item) => (item?.contentDetails?.duration || "PT0S") !== "PT0S");
+        if(!validVideosMeta.length){
+            return sendError(res, 400, "No playable videos found in provided URLs");
+        }
+
+        const newVideoDocs = validVideosMeta.map((item) => buildVideoDocFromYoutubeMeta({
+            courseId: course._id,
+            owner: req.user.username,
+            item,
+            personalization: course.personalizationProfile || {},
+            knownTopics,
+            moduleOverride: "Module: CUSTOM ADDED"
+        }));
+
+        const inserted = await Video.insertMany(newVideoDocs);
+        const modules = await syncCourseLearningModules(course._id);
+
+        return sendSuccess(res, 201, "Videos added to course successfully", {
+            addedCount: inserted.length,
+            modulesCount: modules.length
+        });
+    } catch (error) {
+        console.log(error);
+        return sendError(res, 500, "Failed to add videos to course", error.message);
+    }
+}
 
 export const getCourse =  async (req,res) => {
     try {
         const courses = await Course.find({
             owner: req.user.username
         })
-        if(courses.length===0){
-            res.status(200).send("No courses found")
-        }
-        else{
-            res.status(200).send(courses)
-        }
+        return sendSuccess(res, 200, "Courses fetched successfully", courses)
     } catch (error) {
         console.log(error)
+        return sendError(res, 500, "Failed to fetch courses", error.message)
     }
 }
 export const getSingleCourse =  async (req,res) => {
     try {
-        const courses = await Course.find({
-            _id: req.params.id
+        const course = await Course.findOne({
+            _id: req.params.id,
+            owner: req.user.username
         })
-        if(courses.length===0){
-            res.status(200).send("No courses found")
+
+        if(!course){
+            return sendError(res, 404, "No course found")
         }
-        else{
-            res.status(200).send(courses)
-        }
+
+        return sendSuccess(res, 200, "Course fetched successfully", course)
     } catch (error) {
         console.log(error)
+        return sendError(res, 500, "Failed to fetch course", error.message)
     }
 }
 
 export const getVideo =  async (req,res) => {
     try {
         const {videoId} = req.body;
-        const video =  await Video.find({
+        const video =  await Video.findOne({
             videoId,
             owner: req.user.username
         });
-        if(video.length === 0){
-            // console.log("ho")
-            res.status(200).send({
-                code: 404,
-                data: "No video found"
-            });
+
+        if(!video){
+            return sendError(res, 404, "No video found");
         }
-        else{
-            // console.log("ha")
-            res.status(200).send({
-                code: 200,
-                data: video[0]
-            });
-        }
+
+        return sendSuccess(res, 200, "Video fetched successfully", video);
         
     } catch (error) {
         console.log(error)
+        return sendError(res, 500, "Failed to fetch video", error.message)
     }
 }
 
@@ -186,16 +640,13 @@ export const getCourseData = async(req,res) => {
 
     try {
         const courses = await Video.find({
-            playlist: req.params.id
+            playlist: req.params.id,
+            owner: req.user.username
         })
-        if(courses.length===0){
-            res.status(200).send("No courses found")
-        }
-        else{
-            res.status(200).send(courses)
-        }
+        return sendSuccess(res, 200, "Course data fetched successfully", courses)
     } catch (error) {
         console.log(error);
+        return sendError(res, 500, "Failed to fetch course data", error.message)
     }
 
 }
@@ -282,7 +733,7 @@ export const getAi = async (req,res) => {
             Current Question: ${currentQues.content}
             `,
             });
-            res.status(200).send(result.text);
+            return sendSuccess(res, 200, "AI response generated", result.text);
         }
         else{
             const result = await generateText({
@@ -312,13 +763,13 @@ export const getAi = async (req,res) => {
             videoDescription: ${description}
             `,
             });
-            res.status(200).send(result.text);
+            return sendSuccess(res, 200, "AI response generated", result.text);
         }
         
 
     } catch (error) {
         console.error("Chat Error:", error);
-        res.status(500).json({ error: "Server Error" });
+        return sendError(res, 500, "Server Error", error.message);
     }
 
     // const response = await generateText({
@@ -347,7 +798,7 @@ export const getSummary = async (req,res) => {
         });
         if(checkIfExists.length !== 0){
             const data = checkIfExists[0];
-            res.status(200).json(data);
+            return sendSuccess(res, 200, "Summary fetched successfully", data);
         }
         else{
             const result = await generateText({
@@ -409,7 +860,7 @@ export const getSummary = async (req,res) => {
                 summary: result.text
             });
             await newSummary.save();
-            res.status(200).json(newSummary);
+            return sendSuccess(res, 201, "Summary generated successfully", newSummary);
         }
         //     rawTranscript = await fetchTranscript(`https://www.youtube.com/watch?v=${videoId}`);
         //     const newAddTs = new Transcript({
@@ -442,7 +893,7 @@ export const getSummary = async (req,res) => {
 
     } catch (error) {
         console.error("Chat Error:", error);
-        res.status(500).json({ error: "Server Error" });
+        return sendError(res, 500, "Server Error", error.message);
     }
 
     // const response = await generateText({
@@ -472,7 +923,7 @@ export const getRecommendedProblems = async (req,res) => {
         // let rawTranscript;
         if(checkIfExists.length !== 0){
             const data = checkIfExists[0];
-            res.status(200).json(data);
+            return sendSuccess(res, 200, "Problems fetched successfully", data);
         }
         else{
             const result = await generateText({
@@ -576,7 +1027,7 @@ export const getRecommendedProblems = async (req,res) => {
                 problemsList: checkedData.data
             });
             await newProblems.save();
-            res.status(200).json(newProblems);
+            return sendSuccess(res, 201, "Problems generated successfully", newProblems);
         }
         //     rawTranscript = await fetchTranscript(`https://www.youtube.com/watch?v=${videoId}`);
         //     const newAddTs = new Transcript({
@@ -609,7 +1060,7 @@ export const getRecommendedProblems = async (req,res) => {
 
     } catch (error) {
         console.error("Chat Error:", error);
-        res.status(500).json({ error: "Server Error" });
+        return sendError(res, 500, "Server Error", error.message);
     }
 
     // const response = await generateText({
@@ -633,82 +1084,110 @@ export const getRecommendedProblems = async (req,res) => {
 
 export const updateCourseProgess = async (req,res) => {
     try {
-        const {completed_videos, last_video_played, courseId} = req.body;
+        const {completed_videos, last_video_played, completedVideos, lastVideoPlayed, courseId} = req.body;
         
-        const newUpdatedCourse = await Course.findByIdAndUpdate(courseId, {
-            completedVideos: completed_videos,
-            lastVideoPlayed: last_video_played,
+        const newUpdatedCourse = await Course.findOneAndUpdate({
+            _id: courseId,
+            owner: req.user.username
+        }, {
+            completedVideos: completed_videos ?? completedVideos,
+            lastVideoPlayed: last_video_played ?? lastVideoPlayed,
         });
 
-        res.status(200).send("Course Progress Updated Successfully")
+        if(!newUpdatedCourse){
+            return sendError(res, 403, "Course not found or unauthorized");
+        }
+
+        return sendSuccess(res, 200, "Course Progress Updated Successfully")
         // console.log("Course Progress Updated Successfully")
 
     } catch (error) {
         console.error("Chat Error:", error);
-        res.status(500).json({ error: "Server Error" });
+        return sendError(res, 500, "Server Error", error.message);
     }
 }
 export const updateVideoProgess = async (req,res) => {
     try {
-        const {progress_time, duration, completed, videoId} = req.body;
-        const newUpdatedVideo = await Video.findByIdAndUpdate(videoId, {
-            progressTime: progress_time,
-            totalDuration: duration,
+        const {progress_time, duration, completed, videoId, progressTime, totalDuration} = req.body;
+        const newUpdatedVideo = await Video.findOneAndUpdate({
+            _id: videoId,
+            owner: req.user.username
+        }, {
+            progressTime: progress_time ?? progressTime,
+            totalDuration: duration ?? totalDuration,
             completed: completed
         });
 
-        res.status(200).send({
-            data: "Video Progress Updated Successfully"
-        })
+        if(!newUpdatedVideo){
+            return sendError(res, 403, "Video not found or unauthorized");
+        }
+
+        return sendSuccess(res, 200, "Video Progress Updated Successfully")
                 // console.log("Video Progress Updated Successfully")
 
 
     } catch (error) {
         console.error("Chat Error:", error);
-        res.status(500).json({ error: "Server Error" });
+        return sendError(res, 500, "Server Error", error.message);
     }
 }
 
 export const updateVideoNotes = async (req,res) => {
     try {
         const {newNote, videoId} = req.body;
+        const existingVideo = await Video.findOne({
+            _id: videoId,
+            owner: req.user.username
+        });
+
+        if(!existingVideo){
+            return sendError(res, 403, "Video not found or unauthorized");
+        }
+
         const createdNewNote = new Notes(newNote);
-        createdNewNote.save();
-        const resp = await Video.findById(videoId);
-        resp.notes.push(createdNewNote._id);
-        await resp.save();
+        await createdNewNote.save();
+        existingVideo.notes.push(createdNewNote._id);
+        await existingVideo.save();
         // console.log({ 
         //     message: "Note updated successfully", notes: resp.notes
         // })
-        res.status(200).json({ 
-            message: "Note updated successfully", notes: resp.notes
+        return sendSuccess(res, 200, "Note updated successfully", {
+            notes: existingVideo.notes
         });
 
     } catch (error) {
         console.error("Chat Error:", error);
-        res.status(500).json({ error: "Server Error" });
+        return sendError(res, 500, "Server Error", error.message);
     }
 }
 export const getVideoNotes = async (req,res) => {
     try {
+        const videoExists = await Video.findOne({
+            _id: req.params.id,
+            owner: req.user.username
+        });
+
+        if(!videoExists){
+            return sendError(res, 403, "Video not found or unauthorized");
+        }
+
         const notes = await Notes.find({
             videoId: req.params.id
         })
         if(notes.length===0){
-            res.status(200).send([{
+            return sendSuccess(res, 200, "Notes fetched successfully", [{
                 videoId: req.params.id,
                 timestamp: 200,
                 notesContent: "Sample Note"
             }])
         }
-        else{
-            res.status(200).send(notes);
-            // console.log("Notes: ",notes);
-        }
+
+        return sendSuccess(res, 200, "Notes fetched successfully", notes);
+        // console.log("Notes: ",notes);
 
     } catch (error) {
         console.error("Chat Error:", error);
-        res.status(500).json({ error: "Server Error" });
+        return sendError(res, 500, "Server Error", error.message);
     }
 
 }
@@ -718,35 +1197,65 @@ export const updateLastPlayedCourse = async (req,res) => {
         const {courseId} = req.body;
         const userId = req.user.id;
 
+        const courseExists = await Course.findOne({
+            _id: courseId,
+            owner: req.user.username
+        });
+
+        if(!courseExists){
+            return sendError(res, 403, "Course not found or unauthorized");
+        }
+
         const updateLastPlayed = await User.findByIdAndUpdate(userId, {
             lastCoursePlayed: courseId
         });
         
-        res.status(200).json({ 
-            message: "last played saved successfully", lastplayedId: updateLastPlayed
+        return sendSuccess(res, 200, "last played saved successfully", {
+            lastplayedId: updateLastPlayed
         });
     } catch (error) {
         console.error("Chat Error:", error);
-        res.status(500).json({ error: "Server Error" });
+        return sendError(res, 500, "Server Error", error.message);
     }
 }
 export const deleteVideoNotes = async (req,res) => {
     try {
         const {noteId, videoId} = req.body;
-        const resp = await Video.findById(videoId);
-        const newArr = resp.notes.filter((e) => (e !== noteId));
-        const resp2 = await Notes.findByIdAndDelete(noteId);
+        const resp = await Video.findOne({
+            _id: videoId,
+            owner: req.user.username
+        });
+
+        if(!resp){
+            return sendError(res, 403, "Video not found or unauthorized");
+        }
+
+        const noteExistsInVideo = resp.notes.some((e) => e.toString() === noteId);
+        if(!noteExistsInVideo){
+            return sendError(res, 404, "Note not found in video");
+        }
+
+        const newArr = resp.notes.filter((e) => (e.toString() !== noteId));
+        const resp2 = await Notes.findOneAndDelete({
+            _id: noteId,
+            videoId: videoId
+        });
+
+        if(!resp2){
+            return sendError(res, 404, "Note not found");
+        }
+
         resp.notes = newArr;
         await resp.save();
         // console.log({ 
         //     message: "Note deleted successfully", notes: resp.notes
         // })
-        res.status(200).json({ 
-            message: "Note deleted successfully", notes: resp.notes
+        return sendSuccess(res, 200, "Note deleted successfully", {
+            notes: resp.notes
         });
     } catch (error) {
         console.error("Chat Error:", error);
-        res.status(500).json({ error: "Server Error" });
+        return sendError(res, 500, "Server Error", error.message);
     }
 }
 // courseData.data.items.map((vid,idx) => {

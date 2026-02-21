@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, act } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import {
   Play,
   ChevronLeft,
@@ -45,6 +45,9 @@ import "@excalidraw/excalidraw/index.css"; //else tailwind css messed it up
   };
 
 const CoursePlayer = () => {
+  const getApiData = (response) => {
+    return response?.data?.data ?? response?.data;
+  };
   const [data, setData] = useState([]);
   const [courseData, setCourseData] = useState({});
   const { name, id } = useParams();
@@ -56,8 +59,6 @@ const CoursePlayer = () => {
   const [isPracticeOpen, setIsPracticeOpen] = useState(false);
   const [problemsLoading, setProblemsLoading] = useState(true);
   const [isSummaryButtonOpen, setIsSummaryButtonOpen] = useState(true);
-  const [isWhiteboardOpen, setIsWhiteboardOpen] = useState(false);
-  const [DrawLoading, setDrawLoading] = useState(true)
   const playerInstanceRef = useRef(null); // to use the player outside the useeffect...
   const [messages, setMessages] = useState([
     {
@@ -66,11 +67,9 @@ const CoursePlayer = () => {
         "Hello! I'm your AI learning assistant. I'm watching this video with you. Ask me anything about the content!",
     },
   ]);
-  const [currDuration, setCurrDuration] = useState(0);
   const videoRef = useRef(null); // this means this - {current: null}:  useRef gives you an object that looks like this: { current: initialValue }. This object stays the same for the entire life of the component.
   // const plyrRef = useRef(null);
   const [currentTime, setCurrentTime] = useState(0);
-  const [currVideo, setCurrVideo] = useState("");
   const [notesLoading, setNotesLoading] = useState(true);
   const [summaryLoading, setSummaryLoading] = useState(true)
 
@@ -82,7 +81,6 @@ const CoursePlayer = () => {
   const [input, setInput] = useState("");
   const chatContainerRef = useRef(null);
   const [isChatLoading, setIsChatLoading] = useState(false);
-  const [completedVideos, setCompletedVideos] = useState([-1]);
   const [currentVideoNotes, setCurrentVideoNotes] = useState([]);
   const [isToolsOpen, setIsToolsOpen] = useState(true);
   const [isSummaryOpen, setIsSummaryOpen] = useState(false);
@@ -90,10 +88,13 @@ const CoursePlayer = () => {
   const [isExcaliOpen, setIsExcaliOpen] = useState(false);
   const [notesInput, setNotesInput] = useState("");
   const navigate = useNavigate();
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [problemsData, setProblemsData] = useState([]);
   const [relevant, setRelevant] = useState(true);
   const [summaryData, setSummaryData] = useState("");
+  const [openModulesMap, setOpenModulesMap] = useState({});
+  const [newVideoUrls, setNewVideoUrls] = useState([""]);
+  const [addingVideos, setAddingVideos] = useState(false);
+  const [addVideoStatus, setAddVideoStatus] = useState("");
 
   const [ideLanguage, setIdeLanguage] = useState("javascript");
   const [ideVersion, setIdeVersion] = useState(LANGUAGE_VERSIONS["javascript"]);
@@ -154,14 +155,12 @@ const CoursePlayer = () => {
       const responsePost = await axios.get(`${import.meta.env.VITE_API_URL}/auth/check`, {
         withCredentials: true,
       });
-      if (responsePost.data.code === 200) {
-        setIsLoggedIn(true);
-      } else {
-        setIsLoggedIn(false);
+      if (!responsePost.data?.success) {
         navigate("/login");
       }
     } catch (error) {
       console.log(error);
+      navigate("/login");
     }
   };
 
@@ -207,18 +206,21 @@ const CoursePlayer = () => {
           withCredentials: true,
         }
       );
+      const courseVideos = getApiData(apiData) || [];
+      const courseMeta = getApiData(courseApiData) || {};
+
       const currIndex =
         localStorage.getItem(
-          `last_video_played_${apiData?.data?.[activeIndex]?.playlist}`
+          `last_video_played_${courseVideos?.[activeIndex]?.playlist}`
         ) ||
-        courseApiData?.data?.[0]?.lastVideoPlayed ||
+        courseMeta?.lastVideoPlayed ||
         0;
       // console.log(localStorage.getItem(`last_video_played_${data?.[activeIndex]?.playlist}`))
       setActiveIndex(parseFloat(currIndex));
       // console.log(apiData.data);
-      const filteredData = apiData.data.filter((e) => e.duration !== "PT0S").filter((e) => e.title !== "Deleted video");
+      const filteredData = courseVideos.filter((e) => e.duration !== "PT0S").filter((e) => e.title !== "Deleted video");
       setData(filteredData);
-      setCourseData(courseApiData.data);
+      setCourseData([courseMeta]);
     } catch (error) {
       console.log(error);
     } finally {
@@ -239,7 +241,8 @@ const CoursePlayer = () => {
           withCredentials: true,
         }
       );
-      setSummaryData(res.data.summary);
+      const summaryPayload = getApiData(res);
+      setSummaryData(summaryPayload?.summary || "");
     } catch (error) {
       console.log(error);
     } finally {
@@ -259,9 +262,9 @@ const CoursePlayer = () => {
           withCredentials: true,
         }
       );
-
-      setProblemsData(res.data.problemsList);
-      setRelevant(res.data.relevant);
+      const problemsPayload = getApiData(res);
+      setProblemsData(problemsPayload?.problemsList || []);
+      setRelevant(problemsPayload?.relevant ?? false);
     } catch (error) {
       console.log(error);
     } finally {
@@ -283,8 +286,8 @@ const CoursePlayer = () => {
           withCredentials: true,
         }
       );
-
-      setCurrentVideoNotes(notesApiData?.data);
+      const notesPayload = getApiData(notesApiData);
+      setCurrentVideoNotes(notesPayload || []);
     } catch (error) {
       console.log(error);
     } finally {
@@ -300,7 +303,7 @@ const CoursePlayer = () => {
   const deletNotes = async (noteId) => {
     try {
       // setCurrentVideoNotes((prev) => ([...prev].filter((e) => e.noteIndex !== noteIdx+1)));
-      const apiRes = await axios.post(
+      await axios.post(
         `${import.meta.env.VITE_API_URL}/course/update/video/notes/delete`,
         {
           videoId: data?.[activeIndex]?._id,
@@ -334,32 +337,88 @@ const CoursePlayer = () => {
   const handleNotesSubmit = async (e) => {
     e.preventDefault();
     setNotesLoading(true);
-    const apiRes = await axios.post(
-      `${import.meta.env.VITE_API_URL}/course/update/video/notes`,
-      {
-        videoId: data?.[activeIndex]?._id,
-        newNote: {
+    try {
+      await axios.post(
+        `${import.meta.env.VITE_API_URL}/course/update/video/notes`,
+        {
           videoId: data?.[activeIndex]?._id,
-          timestamp:
-            JSON.parse(localStorage.getItem(`video_${currentVideoId}_progress`))
-              ?.progressTime ||
-            data?.[activeIndex]?.progressTime ||
-            0,
-          notesContent: notesInput,
+          newNote: {
+            videoId: data?.[activeIndex]?._id,
+            timestamp:
+              JSON.parse(localStorage.getItem(`video_${currentVideoId}_progress`))
+                ?.progressTime ||
+              data?.[activeIndex]?.progressTime ||
+              0,
+            notesContent: notesInput,
+          },
         },
-      },
-      { withCredentials: true }
-    );
+        { withCredentials: true }
+      );
 
-    await getNotesData();
+      await getNotesData();
 
-    // setCurrentVideoNotes((prev) => [...prev, {
-    //   videoId: data?.[activeIndex]?._id,
-    //   noteIndex: currentVideoNotes.length + 1 || 1,
-    //   timestamp: Math.floor(playerInstanceRef.current.currentTime) || JSON.parse(localStorage.getItem(`video_${currentVideoId}_progress`))?.progressTime || data?.[activeIndex]?.progressTime || 0,
-    //   notesContent: notesInput
-    // }]);
-    setNotesInput("");
+      // setCurrentVideoNotes((prev) => [...prev, {
+      //   videoId: data?.[activeIndex]?._id,
+      //   noteIndex: currentVideoNotes.length + 1 || 1,
+      //   timestamp: Math.floor(playerInstanceRef.current.currentTime) || JSON.parse(localStorage.getItem(`video_${currentVideoId}_progress`))?.progressTime || data?.[activeIndex]?.progressTime || 0,
+      //   notesContent: notesInput
+      // }]);
+      setNotesInput("");
+    } catch (error) {
+      console.log(error);
+      setNotesLoading(false);
+    }
+  };
+
+  const setNewVideoUrlAt = (index, value) => {
+    setNewVideoUrls((prev) => prev.map((item, idx) => (idx === index ? value : item)));
+  };
+
+  const addNewVideoInput = () => {
+    setNewVideoUrls((prev) => [...prev, ""]);
+  };
+
+  const removeNewVideoInput = (index) => {
+    setNewVideoUrls((prev) => {
+      const next = prev.filter((_, idx) => idx !== index);
+      return next.length ? next : [""];
+    });
+  };
+
+  const addVideosToExistingCourse = async () => {
+    const urls = newVideoUrls.map((item) => item.trim()).filter(Boolean);
+    if (!urls.length) {
+      setAddVideoStatus("Add at least one video URL.");
+      return;
+    }
+
+    setAddingVideos(true);
+    setAddVideoStatus("");
+    try {
+      const response = await axios.post(
+        `${import.meta.env.VITE_API_URL}/course/add-videos`,
+        {
+          courseId: id.split("}")[0],
+          videoUrls: urls,
+        },
+        {
+          withCredentials: true,
+        }
+      );
+
+      if (response?.data?.success) {
+        setAddVideoStatus(`Added ${response?.data?.data?.addedCount || urls.length} videos successfully.`);
+        setNewVideoUrls([""]);
+        await getData();
+      } else {
+        setAddVideoStatus(response?.data?.message || "Unable to add videos.");
+      }
+    } catch (error) {
+      console.log(error);
+      setAddVideoStatus(error?.response?.data?.message || "Unable to add videos.");
+    } finally {
+      setAddingVideos(false);
+    }
   };
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -414,7 +473,7 @@ const CoursePlayer = () => {
           ...newMessages,
           {
             role: "system",
-            content: resp.data,
+            content: getApiData(resp),
           },
         ];
         setMessages(newerMessages);
@@ -463,6 +522,50 @@ const CoursePlayer = () => {
   // }, [activeIndex]);
 
   const currentVideoId = data?.[activeIndex]?.videoId;
+  const moduleGroups = data.reduce((acc, video, index) => {
+    const moduleKey = video.moduleTitle || "Module: General";
+    const savedProgress = JSON.parse(localStorage.getItem(`video_${video.videoId}_progress`));
+    const isCompleted = (savedProgress?.completed || video?.completed) === true;
+
+    if (!acc[moduleKey]) {
+      acc[moduleKey] = {
+        title: moduleKey,
+        firstIndex: index,
+        total: 0,
+        completed: 0,
+        videos: [],
+      };
+    }
+
+    acc[moduleKey].total += 1;
+    if (isCompleted) {
+      acc[moduleKey].completed += 1;
+    }
+    acc[moduleKey].videos.push({
+      index,
+      video,
+      isCompleted,
+      savedProgress,
+    });
+    return acc;
+  }, {});
+  const modulesList = Object.values(moduleGroups);
+
+  useEffect(() => {
+    if (!modulesList.length) {
+      setOpenModulesMap({});
+      return;
+    }
+    setOpenModulesMap((prev) => {
+      const next = { ...prev };
+      modulesList.forEach((moduleItem, idx) => {
+        if (typeof next[moduleItem.title] !== "boolean") {
+          next[moduleItem.title] = idx === 0;
+        }
+      });
+      return next;
+    });
+  }, [data]);
 
   useEffect(() => {
     const player = new Plyr(videoRef.current, {
@@ -507,9 +610,6 @@ const CoursePlayer = () => {
           ?.progressTime || data?.[activeIndex]?.progressTime;
       // console.log(progressedTime);
       event.detail.plyr.currentTime = parseFloat(progressedTime); // this parseFloat is required to convert string to number -- impp
-      setCurrDuration(player.duration);
-      setCurrVideo(activeIndex);
-
       localStorage.setItem(
         `last_video_played_${data?.[activeIndex]?.playlist}`,
         activeIndex
@@ -642,7 +742,6 @@ const CoursePlayer = () => {
             .completed !== true
         ) {
           if (time > 1) {
-            const progressTime = Math.floor(time);
             const obj = JSON.stringify({
               progressTime: player.duration,
               duration: player.duration,
@@ -661,7 +760,6 @@ const CoursePlayer = () => {
       } else {
         if (data?.[activeIndex]?.completed !== true) {
           if (time > 1) {
-            const progressTime = Math.floor(time);
             const obj = JSON.stringify({
               progressTime: player.duration,
               duration: player.duration,
@@ -685,7 +783,6 @@ const CoursePlayer = () => {
         ) || courseData?.[0]?.completedVideos;
       if (completedVids.filter((num) => num === activeIndex).length === 0) {
         const compVids = JSON.stringify([...completedVids, activeIndex]);
-        setCompletedVideos((prev) => [...prev, activeIndex]);
         // const compVids = JSON.stringify([...completedVideos, activeIndex]);
 
         localStorage.setItem(
@@ -749,7 +846,7 @@ const CoursePlayer = () => {
       const currentStatus = progressRef.current;
       if (currentStatus.courseId && currentStatus.videoId) {
         try {
-          const courseApiRes = await axios.post(
+          await axios.post(
             `${import.meta.env.VITE_API_URL}/course/update/course`,
             {
               completed_videos: currentStatus.completedVideos,
@@ -758,7 +855,7 @@ const CoursePlayer = () => {
             },
             { withCredentials: true }
           );
-          const videoApiRes = await axios.post(
+          await axios.post(
             `${import.meta.env.VITE_API_URL}/course/update/video`,
             {
               progress_time: currentStatus.progressTime,
@@ -1084,7 +1181,7 @@ const CoursePlayer = () => {
                         initialDrawData.current ={ elements: [], appState: {viewBackgroundColor: "#ffffff", 
                           currentItemStrokeColor: "#1e1e1e" } };
                       };
-                    } catch (error) {
+                    } catch {
                         initialDrawData.current ={ elements: [], appState: {viewBackgroundColor: "#ffffff", 
                           currentItemStrokeColor: "#1e1e1e" } };
                     }finally{
@@ -1186,6 +1283,7 @@ const CoursePlayer = () => {
                       courseData?.[0]?.completedVideos?.length - 1
                     : courseData?.[0]?.completedVideos?.length - 1}{" "}
                   / {data?.length} Completed
+                  {` | ${courseData?.[0]?.learningModules?.length || 0} Modules`}
                 </span>
               </div>
 
@@ -1215,203 +1313,199 @@ const CoursePlayer = () => {
               </span>
                 </div> */}
                   {/* Scrollable Area */}
-                  <div className="p-3 md:pb-28 space-y-2 max-h-90 md:max-h-150 overflow-y-auto custom-scrollbar hover:pr-2">
-                    {data.slice(0, activeIndex + 50).map((video, index) => (
-                      <div
-                        onClick={() => {
-                          
-                          setActive(index);
-                        }}
-                        key={index}
-                        className={`
-              group flex items-center gap-4 p-3 rounded-xl transition-all duration-200 cursor-pointer border
-              ${
-                activeIndex === index
-                  ? ` ${
-                      (JSON.parse(
-                        localStorage.getItem(
-                          `video_${data[index].videoId}_progress`
-                        )
-                      )?.completed || data?.[index]?.completed) === true
-                        ? "bg-green-500/5 border-green-500/20"
-                        : "bg-[#2563EB]/5 border-[#2563EB]/20"
-                    }`
-                  : "bg-transparent border-transparent hover:bg-white/5"
-              }
-            `}
-                        //  : `${completedVideos.filter((num) => num===index).length === 0 ? 'bg-green-500/5 border-green-500/20 text-zinc-700':'bg-transparent border-transparent hover:bg-white/5' }`
-                      >
-                        {/* Status Icon */}
-                        <div
-                          className={`
-                w-8 h-8 rounded-md flex items-center justify-center shrink-0 transition-transform duration-500 
-                ${
-                  activeIndex === index
-                    ? `${
-                        (JSON.parse(
-                          localStorage.getItem(
-                            `video_${data[index].videoId}_progress`
-                          )
-                        )?.completed || data?.[index]?.completed) === true
-                          ? "bg-green-500/80"
-                          : "bg-[#2563EB]"
-                      } text-black `
-                    : `bg-transparent text-zinc-700 border  ${
-                        (JSON.parse(
-                          localStorage.getItem(
-                            `video_${data[index].videoId}_progress`
-                          )
-                        )?.completed || data?.[index]?.completed) === true
-                          ? "border-green-500/50"
-                          : "border-white/5"
-                      }`
-                }
-                
-              `}
-                        >
-                          {activeIndex === index ? (
-                            <Play size={14} fill="black" />
-                          ) : (
-                            <span className="text-[10px] font-bold ">
-                              {(JSON.parse(
-                                localStorage.getItem(
-                                  `video_${data[index].videoId}_progress`
-                                )
-                              )?.completed || data?.[index]?.completed) ===
-                              true ? (
-                                <div className="text-green-500">
-                                  <SquareCheckBig size={14} />
-                                </div>
-                              ) : (
-                                index + 1
-                              )}
-                            </span>
-                          )}
-                        </div>
+                  <div className="p-3 md:pb-28 space-y-3 max-h-90 md:max-h-150 overflow-y-auto custom-scrollbar hover:pr-2">
+                    <div className="mb-2 border border-white/10 bg-white/2 rounded-md p-3">
+                      <div className="text-[11px] font-black text-zinc-500 uppercase tracking-[0.2em] mb-3">
+                        Learning Modules
+                      </div>
+                      <div className="space-y-2">
+                        {modulesList.map((moduleItem, idx) => {
+                          const percentage = moduleItem.total ? Math.floor((moduleItem.completed / moduleItem.total) * 100) : 0;
+                          return (
+                            <button
+                              key={idx}
+                              onClick={() => setActive(moduleItem.firstIndex)}
+                              className="w-full text-left px-3 py-2 rounded-sm border border-white/10 bg-black/20 hover:bg-white/5 transition-colors"
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-xs text-zinc-200 font-semibold truncate">{moduleItem.title}</span>
+                                <span className="text-[10px] text-zinc-500">
+                                  {moduleItem.completed}/{moduleItem.total}
+                                </span>
+                              </div>
+                              <div className="mt-2 h-1 w-full rounded-full bg-zinc-800/60 overflow-hidden">
+                                <div className="h-full bg-[#2563EB] rounded-full" style={{ width: `${percentage}%` }} />
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
 
-                        {/* Video Thumbnail */}
-                        <div className="shrink-0 relative rounded-md overflow-hidden border border-white/10 w-20 h-11 bg-zinc-900">
-                          <img
-                            src={video.thumbnail}
-                            alt={video.title}
-                            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110 grayscale-[0.3] group-hover:grayscale-0"
+                    <div className="border border-white/10 bg-black/20 rounded-md p-3 space-y-2">
+                      <p className="text-[11px] font-black text-zinc-500 uppercase tracking-[0.2em]">Add Videos To This Course</p>
+                      {newVideoUrls.map((videoUrl, idx) => (
+                        <div key={idx} className="flex gap-2">
+                          <input
+                            type="text"
+                            value={videoUrl}
+                            onChange={(e) => setNewVideoUrlAt(idx, e.target.value)}
+                            placeholder="https://www.youtube.com/watch?v="
+                            className="flex-1 bg-[#0f0f0f] border border-zinc-800 rounded-sm px-3 py-2 text-white text-xs focus:outline-none focus:border-[#2563EB]"
                           />
+                          <button
+                            type="button"
+                            onClick={() => removeNewVideoInput(idx)}
+                            className="px-2 py-1 rounded-sm bg-white/5 border border-white/10 text-zinc-300 hover:text-red-300 hover:border-red-400/40"
+                          >
+                            <Trash2 size={14} />
+                          </button>
                         </div>
+                      ))}
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={addNewVideoInput}
+                          className="text-xs px-3 py-1.5 rounded-sm bg-white/5 border border-white/10 text-zinc-300 hover:bg-white/10"
+                        >
+                          Add Another URL
+                        </button>
+                        <button
+                          type="button"
+                          onClick={addVideosToExistingCourse}
+                          disabled={addingVideos}
+                          className="text-xs px-3 py-1.5 rounded-sm bg-[#2563EB] text-black font-bold disabled:opacity-70"
+                        >
+                          {addingVideos ? "Adding..." : "Add Videos"}
+                        </button>
+                      </div>
+                      <p className={`text-xs ${addVideoStatus.toLowerCase().includes("success") || addVideoStatus.toLowerCase().includes("added") ? "text-green-400" : "text-zinc-400"}`}>
+                        {addVideoStatus}
+                      </p>
+                    </div>
 
-                        {/* Text Info */}
-                        <div className="flex-1 min-w-0">
-                          <h4
-                            className={`text-sm font-bold mb-1 leading-tight truncate ${
-                              activeIndex === index
-                                ? "text-white"
-                                : "text-zinc-400 group-hover:text-zinc-200"
+                    {modulesList.map((moduleItem, moduleIndex) => {
+                      const isOpen = openModulesMap[moduleItem.title] ?? moduleIndex === 0;
+                      const modulePercentage = moduleItem.total
+                        ? Math.floor((moduleItem.completed / moduleItem.total) * 100)
+                        : 0;
+
+                      return (
+                        <div key={moduleItem.title} className="border border-white/10 rounded-md bg-black/20 overflow-hidden">
+                          <button
+                            onClick={() =>
+                              setOpenModulesMap((prev) => ({
+                                ...prev,
+                                [moduleItem.title]: !isOpen,
+                              }))
+                            }
+                            className="w-full px-3 py-2 flex items-center justify-between gap-2 hover:bg-white/5"
+                          >
+                            <div className="min-w-0 text-left">
+                              <p className="text-xs font-bold text-zinc-200 truncate">{moduleItem.title}</p>
+                              <p className="text-[10px] text-zinc-500">
+                                {moduleItem.completed}/{moduleItem.total} completed
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <span className="text-[10px] text-zinc-400">{modulePercentage}%</span>
+                              <ChevronDown
+                                size={14}
+                                className={`text-zinc-500 transition-transform duration-300 ${isOpen ? "rotate-180" : ""}`}
+                              />
+                            </div>
+                          </button>
+
+                          <div
+                            className={`grid transition-[grid-template-rows] duration-300 ${
+                              isOpen ? "grid-rows-[1fr]" : "grid-rows-[0fr]"
                             }`}
                           >
-                            {video.title}
-                          </h4>
-                          <div className="flex items-center gap-2">
-                            <Clock
-                              size={10}
-                              className={
-                                activeIndex === index
-                                  ? "text-[#2563EB]"
-                                  : "text-zinc-600"
-                              }
-                            />
-                            <span
-                              className={`text-[11px] font-medium ${
-                                activeIndex === index
-                                  ? "text-[#2563EB]"
-                                  : "text-zinc-600"
-                              }`}
-                            >
-                              {video.duration
-                                .replace("PT", "")
-                                .replace("H", ":")
-                                .replace("M", ":")
-                                .replace("S", "")}
-                            </span>
-                          </div>
-                          <div className="flex gap-2">
-                            <div
-                              className={`${
-                                JSON.parse(
-                                  localStorage.getItem(
-                                    `video_${data[index].videoId}_progress`
-                                  )
-                                )?.progressTime || data?.[index]?.progressTime
-                                  ? ""
-                                  : "hidden"
-                              } w-full h-1 bg-zinc-800/50 rounded-full mt-2 overflow-hidden`}
-                            >
-                              <div
-                                className={`h-full ${
-                                  (JSON.parse(
-                                    localStorage.getItem(
-                                      `video_${data[index].videoId}_progress`
-                                    )
-                                  )?.completed || data[index].completed) ===
-                                  true
-                                    ? "bg-green-500"
-                                    : "bg-[#2563EB]"
-                                }  rounded-full opacity-80`}
-                                style={{
-                                  width: `${
-                                    ((JSON.parse(
-                                      localStorage.getItem(
-                                        `video_${data[index].videoId}_progress`
-                                      )
-                                    )?.progressTime ||
-                                      data?.[index]?.progressTime) /
-                                      (JSON.parse(
-                                        localStorage.getItem(
-                                          `video_${data[index].videoId}_progress`
-                                        )
-                                      )?.duration ||
-                                        data[index].totalDuration)) *
-                                    100
-                                  }%`,
-                                }}
-                              ></div>
+                            <div className="overflow-hidden">
+                              <div className="px-2 pb-2 space-y-2">
+                                {moduleItem.videos.map((moduleVideo, itemIndex) => {
+                                  const video = moduleVideo.video;
+                                  const index = moduleVideo.index;
+                                  const progressStore = JSON.parse(localStorage.getItem(`video_${video.videoId}_progress`));
+                                  const completedState = (progressStore?.completed || data?.[index]?.completed) === true;
+                                  const progressTime = progressStore?.progressTime || data?.[index]?.progressTime;
+                                  const duration = progressStore?.duration || data?.[index]?.totalDuration;
+                                  const progressPercent = progressTime && duration ? Math.floor((progressTime / duration) * 100) : 0;
+
+                                  return (
+                                    <div
+                                      onClick={() => setActive(index)}
+                                      key={`${video.videoId}_${index}`}
+                                      className={`group flex items-center gap-3 p-2 rounded-md transition-all duration-200 cursor-pointer border ${
+                                        activeIndex === index
+                                          ? completedState
+                                            ? "bg-green-500/5 border-green-500/20"
+                                            : "bg-[#2563EB]/5 border-[#2563EB]/20"
+                                          : "bg-transparent border-transparent hover:bg-white/5"
+                                      }`}
+                                    >
+                                      <div
+                                        className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 ${
+                                          activeIndex === index
+                                            ? completedState
+                                              ? "bg-green-500/80 text-black"
+                                              : "bg-[#2563EB] text-black"
+                                            : `bg-transparent text-zinc-700 border ${completedState ? "border-green-500/50" : "border-white/5"}`
+                                        }`}
+                                      >
+                                        {activeIndex === index ? (
+                                          <Play size={12} fill="black" />
+                                        ) : completedState ? (
+                                          <div className="text-green-500">
+                                            <SquareCheckBig size={13} />
+                                          </div>
+                                        ) : (
+                                          <span className="text-[10px] font-bold">{itemIndex + 1}</span>
+                                        )}
+                                      </div>
+
+                                      <div className="shrink-0 relative rounded-md overflow-hidden border border-white/10 w-18 h-10 bg-zinc-900">
+                                        <img
+                                          src={video.thumbnail}
+                                          alt={video.title}
+                                          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110 grayscale-[0.3] group-hover:grayscale-0"
+                                        />
+                                      </div>
+
+                                      <div className="flex-1 min-w-0">
+                                        <h4 className={`text-xs font-bold leading-tight truncate ${activeIndex === index ? "text-white" : "text-zinc-400 group-hover:text-zinc-200"}`}>
+                                          {video.title}
+                                        </h4>
+                                        <div className="flex flex-wrap items-center gap-2 mt-1">
+                                          <Clock size={10} className={activeIndex === index ? "text-[#2563EB]" : "text-zinc-600"} />
+                                          <span className={`text-[11px] font-medium ${activeIndex === index ? "text-[#2563EB]" : "text-zinc-600"}`}>
+                                            {video.duration.replace("PT", "").replace("H", ":").replace("M", ":").replace("S", "")}
+                                          </span>
+                                          <span className="text-[10px] px-2 py-0.5 rounded-sm bg-white/5 border border-white/10 text-zinc-400 capitalize">
+                                            {video.recommendationAction || "watch"}
+                                          </span>
+                                        </div>
+                                        {progressPercent > 0 && (
+                                          <div className="flex items-center gap-2 mt-1">
+                                            <div className="w-full h-1 bg-zinc-800/50 rounded-full overflow-hidden">
+                                              <div
+                                                className={`h-full ${completedState ? "bg-green-500" : "bg-[#2563EB]"} rounded-full opacity-80`}
+                                                style={{ width: `${progressPercent}%` }}
+                                              />
+                                            </div>
+                                            <span className="text-[10px] text-zinc-500">{progressPercent}%</span>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
                             </div>
-                            <span
-                              className={`text-[11px] font-medium ${
-                                activeIndex === index
-                                  ? "text-[#2563EB]"
-                                  : "text-zinc-600"
-                              }
-                            ${
-                              JSON.parse(
-                                localStorage.getItem(
-                                  `video_${data[index].videoId}_progress`
-                                )
-                              )?.progressTime || data?.[index]?.progressTime
-                                ? ""
-                                : "hidden"
-                            }
-                            `}
-                            >
-                              {`${Math.floor(
-                                ((JSON.parse(
-                                  localStorage.getItem(
-                                    `video_${data[index].videoId}_progress`
-                                  )
-                                )?.progressTime ||
-                                  data?.[index]?.progressTime) /
-                                  (JSON.parse(
-                                    localStorage.getItem(
-                                      `video_${data[index].videoId}_progress`
-                                    )
-                                  )?.duration || data[index].totalDuration)) *
-                                  100
-                              )}%`}
-                            </span>
                           </div>
                         </div>
-                      </div>
-                    ))}
-
-                    {/* <div className="sticky bottom-0 h-8 bg-linear-to-t from-[#141414] to-transparent pointer-events-none z-10 -mb-3"></div> */}
+                      );
+                    })}
                   </div>
                 </div>
               </div>
@@ -2183,7 +2277,7 @@ const CoursePlayer = () => {
                             </pre>
                           ),
 
-                          code: ({ inline, className, children, ...props }) => {
+                          code: ({ inline, className, children }) => {
                             const match = /language-(\w+)/.exec(className || '');
                             const isInline = inline || !match;
 

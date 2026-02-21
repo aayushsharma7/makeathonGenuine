@@ -5,7 +5,6 @@ import axios from "axios";
 
 const Navbar = () => {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [infor, setInfor] = useState({});
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
@@ -25,44 +24,45 @@ const Navbar = () => {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  const checkAuth = async () => {
-    try {
-      const responsePost = await axios.get(`${import.meta.env.VITE_API_URL}/auth/check`, {
-        withCredentials: true,
-      });
-      if (responsePost.data.code === 200) {
-        setIsLoggedIn(true);
-        setInfor(responsePost.data.info);
-      } else {
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const responsePost = await axios.get(`${import.meta.env.VITE_API_URL}/auth/check`, {
+          withCredentials: true,
+        });
+        if (responsePost.data?.success) {
+          setIsLoggedIn(true);
+        } else {
+          setIsLoggedIn(false);
+        }
+      } catch (error) {
+        console.log(error);
         setIsLoggedIn(false);
       }
-    } catch (error) {
-      console.log(error);
-      setIsLoggedIn(false);
-    }
-  };
-
-  useEffect(() => {
+    };
     checkAuth();
-    setIsMobileMenuOpen(false);
   }, [location.pathname]);
 
   const handleLogout = async () => {
     if (isLoggedIn) {
-      const apiRes = await axios.post(
-        `${import.meta.env.VITE_API_URL}/auth/logout`,
-        {},
-        {
-          withCredentials: true,
-        }
-      );
-      localStorage.clear();
-      sessionStorage.clear();
-      console.log(apiRes);
-      if (apiRes.data.code === 200) {
-        navigate("/login");
-      } else {
+      try {
+        const apiRes = await axios.post(
+          `${import.meta.env.VITE_API_URL}/auth/logout`,
+          {},
+          {
+            withCredentials: true,
+          }
+        );
+        localStorage.clear();
+        sessionStorage.clear();
         console.log(apiRes);
+        if (apiRes.data?.success) {
+          navigate("/login");
+        } else {
+          console.log(apiRes);
+        }
+      } catch (error) {
+        console.log(error);
       }
     } else {
       navigate("/login");
@@ -134,6 +134,10 @@ const Navbar = () => {
               {
                 name: "Create",
                 path: "/create",
+              },
+              {
+                name: "Onboarding",
+                path: "/onboarding",
               },
               {
                 name: "Courses",
@@ -254,6 +258,7 @@ const Navbar = () => {
             {[
               { name: "Home", path: "/" },
               { name: "Create", path: "/create" },
+              { name: "Onboarding", path: "/onboarding" },
               { name: "Courses", path: "/courses" },
               { name: "Profile", path: "/profile" },
             ].map((item, idx) => (

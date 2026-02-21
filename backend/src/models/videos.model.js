@@ -56,6 +56,25 @@ const videoModel = new mongoose.Schema({
     }],
     owner: {
         type: String,
+    },
+    topicTags: [{
+        type: String
+    }],
+    recommendationAction: {
+        type: String,
+        default: "watch"
+    },
+    recommendationReason: {
+        type: String,
+        default: ""
+    },
+    moduleTitle: {
+        type: String,
+        default: "General"
+    },
+    priorityScore: {
+        type: Number,
+        default: 50
     }
 
 },{timestamps: true});
