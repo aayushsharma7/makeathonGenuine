@@ -23,6 +23,7 @@ const location = useLocation()
         <Route path='/create' element={<CreateCourse />} />
         <Route path='/onboarding' element={<OnboardingPage />} />
         <Route path='/courses' element={<HomePage />} />
+        
         <Route path='/profile' element={<Profile />} />
         <Route path='/courses/:name/:id' element={<CoursePlayer />} />
       </Routes>
