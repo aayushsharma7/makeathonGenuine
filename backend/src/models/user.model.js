@@ -17,7 +17,36 @@ const userModel = new mongoose.Schema({
     },
     lastCoursePlayed: {
         type: String
-    }
+    },
+    heatmapActivity: [{
+        date: {
+            type: String
+        },
+        count: {
+            type: Number,
+            default: 0
+        },
+        minutes: {
+            type: Number,
+            default: 0
+        }
+    }],
+    courseDailyProgress: [{
+        date: {
+            type: String
+        },
+        courseId: {
+            type: String
+        },
+        completedVideos: {
+            type: Number,
+            default: 0
+        },
+        completedMinutes: {
+            type: Number,
+            default: 0
+        }
+    }]
     
 },{timestamps: true})
 

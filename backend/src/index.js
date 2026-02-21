@@ -3,6 +3,7 @@ import "dotenv/config"
 import connectDB from "./config/db.js";
 import authRoute from "./routes/authRoute.js"
 import courseRoute from "./routes/courseRoute.js"
+import onboardingRoute from "./routes/onboardingRoute.js"
 import cors from 'cors'
 import cookieParser from 'cookie-parser'
 
@@ -24,6 +25,7 @@ app.use(urlencoded({extended: true}))
 
 app.use("/auth", authRoute);
 app.use("/course",courseRoute);
+app.use("/onboarding", onboardingRoute);
 
 app.get('/',(req,res) => {
     res.send("working")

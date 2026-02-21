@@ -1,9 +1,11 @@
 import React from 'react'
-import { BookOpen, Clock, Trophy, Settings, Share2, Flame } from 'lucide-react'
+import { BookOpen, Clock, Trophy, Share2, Flame } from 'lucide-react'
 import { useState , useEffect } from 'react';
 import axios from "axios";
+import { useNavigate } from "react-router-dom";
 
 const Profile = () => {
+  const navigate = useNavigate();
   // Mock Data for Stats
   const [user , setUser] = useState(null);
   const [coursesCreated, setCoursesCreated] = useState(null);
@@ -18,65 +20,29 @@ const Profile = () => {
     y: 0,
     date: ""
   });
-
-
-
-const [streak, setStreak] = useState(0);
-
-  useEffect(() => {
-  if (user) {
-    const currentStreak = calculateStreak();
-    setStreak(currentStreak);
-  }
-}, [user]);
-
-  // to calculate streak
-  const calculateStreak = () => {
-  if (!user) return 0;
-
-  let streak = 0;
-  let currentDate = new Date(); 
-
-  while (true) {
-    const dateKey = currentDate.toDateString(); 
-    
-    if (localStorage.getItem(dateKey)) {
-      streak++;
-      
-      currentDate.setDate(currentDate.getDate() - 1);
-    } else {
-      break; 
-    }
-  }
-  return streak;
-};
+  const [profileLoading, setProfileLoading] = useState(true);
+  const [activitySummary, setActivitySummary] = useState({
+    heatmap: {},
+    streak: 0,
+    totalActiveDays: 0
+  });
 
 //courses created 
 useEffect(() => {
   if (!user){
     return;
   }
-  getUserData();
-},[user]);
-
-  
-  const stats = [
-    { label: 'Courses Created', value: coursesCreated, icon: BookOpen, color: 'text-blue-400' },
-    { label: 'Lessons Completed', value:`${hoursLearned} / ${totalVideosCreated}`, icon: Clock, color: 'text-amber-400' },
-    { label: 'Completion Rate', value:`${completionRate}%`, icon: Trophy, color: 'text-emerald-400' },
-    { label: 'Current Streak', value:`${streak} days`, icon: Flame, color: 'text-orange-500' },
-  ]
-
   const getUserData = async () => {
     try {
       const data = await axios.get(`${import.meta.env.VITE_API_URL}/course`, {
         withCredentials: true,
       });
       if (data.status === 200) {
-        setCoursesCreated(data.data.length);
+        const coursesData = data.data?.data || [];
+        setCoursesCreated(coursesData.length);
         let vidsComp = 0;
         let totalVideos = 0;
-        data.data.map((e,idx) => {
+        coursesData.forEach((e) => {
           vidsComp = vidsComp + e.completedVideos.length-1;
           totalVideos = totalVideos + e.totalVideos;
         })
@@ -84,47 +50,60 @@ useEffect(() => {
           vidsComp
         );
         setTotalVideosCreated(totalVideos)
-        setCompletionRate(Math.floor((vidsComp / totalVideos) * 100));
+        setCompletionRate(totalVideos ? Math.floor((vidsComp / totalVideos) * 100) : 0);
       }
     } catch (error) {
       console.log(error);
     }
   };
-
-  // Mock Data for Heatmap (364 days for a full grid look)
-  // 0 = empty, 1-4 = intensity levels
-  
-  
+  getUserData();
+},[user]);
 
   
-  // const heatmapData = generateHeatmapData();
+  const streak = activitySummary?.streak || 0;
 
-  
-  // for profile data
-  
-  useEffect(() => {    
+  const stats = [
+    { label: 'Courses Created', value: coursesCreated, icon: BookOpen, color: 'text-blue-400' },
+    { label: 'Lessons Completed', value:`${hoursLearned} / ${totalVideosCreated}`, icon: Clock, color: 'text-amber-400' },
+    { label: 'Completion Rate', value:`${completionRate}%`, icon: Trophy, color: 'text-emerald-400' },
+    { label: 'Current Streak', value:`${streak} days`, icon: Flame, color: 'text-orange-500' },
+  ]
+
+useEffect(() => {    
   const fetchUser = async () => {
     try {
       const res = await axios.get(
-        "http://localhost:3000/auth/check",
+        `${import.meta.env.VITE_API_URL}/auth/check`,
         { withCredentials: true }
       );
-      setUser(res.data.info);
-    } catch (err) {
+      if(res.data?.success){
+        setUser(res.data?.data);
+        const activityRes = await axios.get(
+          `${import.meta.env.VITE_API_URL}/auth/activity-summary`,
+          { withCredentials: true }
+        );
+        if(activityRes?.data?.success){
+          setActivitySummary(activityRes?.data?.data || {
+            heatmap: {},
+            streak: 0,
+            totalActiveDays: 0
+          });
+        }
+      }
+      else{
+        navigate("/login");
+      }
+    } catch {
       console.log("User not logged in");
+      navigate("/login");
+    } finally {
+      setProfileLoading(false);
     }
   };
 
   fetchUser();
   
-}, []);
-
-useEffect(() => {
-  if (user) {
-    const todayKey = new Date().toDateString();
-    localStorage.setItem(todayKey, "active");
-  }
-}, [user]);
+}, [navigate]);
 
 const startOfYear = new Date(new Date().getFullYear(), 0, 1);
 
@@ -133,23 +112,37 @@ const heatmapData = Array.from({ length: 364 }, (_, index) => {
 
   const dateForIndex = new Date(startOfYear);
   dateForIndex.setDate(startOfYear.getDate() + index);
+  const key = dateForIndex.toISOString().slice(0, 10);
+  const count = activitySummary?.heatmap?.[key]?.count || 0;
 
-  if (localStorage.getItem(dateForIndex.toDateString())) {
-    return 1; // active day
+  if (count >= 4) {
+    return 4;
+  }
+  if (count === 3) {
+    return 3;
+  }
+  if (count === 2) {
+    return 2;
+  }
+  if (count === 1) {
+    return 1;
   }
 
-  return 0; // inactive day
+  return 0;
 });
 
 
 
 const getHeatmapColor = (level) => {
     switch (level) {
+      case 4: return 'bg-blue-300';
+      case 3: return 'bg-blue-400';
+      case 2: return 'bg-blue-500';
       case 1: return 'bg-blue-600';
       default: return 'bg-neutral-800/50';
     }
   };
-const experienceLevel=(hours)=>{
+const experienceLevel=()=>{
   if(coursesCreated < 5) return "Beginner";
   else if(coursesCreated>=5 && coursesCreated<=10) return "Intermediate";
   else if(coursesCreated>30 && coursesCreated <=45) return "Advanced";
@@ -164,7 +157,7 @@ const getName=(name)=>{
 }
 
 
-  if (!user || !coursesCreated)
+  if (profileLoading || !user || coursesCreated === null)
     return (
       <div className="flex items-center justify-center min-h-screen  selection:bg-[#2563EB] selection:text-black overflow-hidden relative">
         <div

@@ -7,9 +7,9 @@ import SignUp from "./pages/SignUp";
 import Login from "./pages/Login";
 import Navbar from "./components/Navbar";
 import Profile from "./pages/Profile";
+import OnboardingPage from "./pages/OnboardingPage";
 
 const App = () => {
-  
 const location = useLocation()
   return (
     <div className="bg-[#18181B]">
@@ -21,6 +21,7 @@ const location = useLocation()
         <Route path='/signup' element={<SignUp />} />
         <Route path='/login' element={<Login />} />
         <Route path='/create' element={<CreateCourse />} />
+        <Route path='/onboarding' element={<OnboardingPage />} />
         <Route path='/courses' element={<HomePage />} />
         <Route path='/profile' element={<Profile />} />
         <Route path='/courses/:name/:id' element={<CoursePlayer />} />

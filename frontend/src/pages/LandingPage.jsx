@@ -1,8 +1,7 @@
-import { useState, useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 const LandingPage = () => {
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
   const navigate = useNavigate();
 
   const checkAuth = async () => {
@@ -10,14 +9,11 @@ const LandingPage = () => {
       const responsePost = await axios.get(`${import.meta.env.VITE_API_URL}/auth/check`, {
         withCredentials: true,
       });
-      if (responsePost.data.code === 200) {
-        setIsLoggedIn(true);
+      if (responsePost.data?.success) {
         navigate("/courses");
-      } else {
-        setIsLoggedIn(false);
       }
-    } catch (error) {
-      console.log(error);
+    } catch {
+      console.log("Not logged in");
     }
   };
 
