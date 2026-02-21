@@ -1,0 +1,31 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "description": "ideathon backend",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "nodemon src/index.js",
+    "start": "node src/index.js"
+  },
+  "author": "Genuine",
+  "license": "ISC",
+  "dependencies": {
+    "@ai-sdk/groq": "^3.0.10",
+    "@google/genai": "^1.37.0",
+    "@google/generative-ai": "^0.24.1",
+    "ai": "^6.0.39",
+    "axios": "^1.13.2",
+    "bcrypt": "^6.0.0",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "groq-sdk": "^0.37.0",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^9.1.0",
+    "nodemon": "^3.1.11",
+    "rag-module": "^1.4.1",
+    "youtube-transcript-plus": "^1.1.2"
+  }
+}

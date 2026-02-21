@@ -1,0 +1,1 @@
+// higher order function to help save time repeating try catch blocks in controllers
