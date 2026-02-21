@@ -9,6 +9,7 @@ import Navbar from "./components/Navbar";
 import Profile from "./pages/Profile";
 
 const App = () => {
+  
 const location = useLocation()
   return (
     <div className="bg-[#18181B]">
