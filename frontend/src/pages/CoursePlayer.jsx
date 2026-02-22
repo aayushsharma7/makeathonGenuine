@@ -108,6 +108,7 @@ const CoursePlayer = () => {
   const [quizStats, setQuizStats] = useState(null);
   const [quizAnalytics, setQuizAnalytics] = useState({ dropoff: [], weakTopicHeatmap: [] });
   const [quizMetaLoading, setQuizMetaLoading] = useState(false);
+  const [showEndQuizPrompt, setShowEndQuizPrompt] = useState(false);
   const [progressInsights, setProgressInsights] = useState(null);
   const [progressInsightsLoading, setProgressInsightsLoading] = useState(false);
   const [showDailyTracker, setShowDailyTracker] = useState(true);
@@ -187,6 +188,7 @@ const CoursePlayer = () => {
 
   useEffect(() => {
     setIsProblemButtonOpen(true);
+    setShowEndQuizPrompt(false);
     setQuizData(null);
     setQuizAnswers({});
     setQuizResult(null);
@@ -515,8 +517,46 @@ const CoursePlayer = () => {
   };
 
   const setActive = (index) => {
+    setShowEndQuizPrompt(false);
     setActiveIndex(index);
     // console.log(activeIndex);
+  };
+
+  const openQuizPanel = () => {
+    setIsToolsOpen(true);
+    setIsContentOpen(false);
+    setIsChatOpen(false);
+    setIsCardsOpen(false);
+    setIsPracticeOpen(false);
+    setIsQuizOpen(true);
+    setTimeout(() => {
+      getQuizData();
+      getQuizMetaData();
+      getProgressInsights();
+    }, 250);
+  };
+
+  const goToNextVideo = () => {
+    if (activeIndex >= data?.length - 1) {
+      return;
+    }
+    setIsToolsOpen(true);
+    setIsContentOpen(true);
+    setIsChatOpen(false);
+    setIsCardsOpen(false);
+    setIsPracticeOpen(false);
+    setIsQuizOpen(false);
+    setActiveIndex((prev) => prev + 1);
+  };
+
+  const handleEndQuizYes = () => {
+    setShowEndQuizPrompt(false);
+    openQuizPanel();
+  };
+
+  const handleEndQuizNo = () => {
+    setShowEndQuizPrompt(false);
+    goToNextVideo();
   };
 
   const deletNotes = async (noteId) => {
@@ -1044,17 +1084,7 @@ const CoursePlayer = () => {
       //   },3000)
       // }
       // event.detail.plyr.stop();
-      setIsToolsOpen(true);
-      setIsContentOpen(false);
-      setIsChatOpen(false);
-      setIsCardsOpen(false);
-      setIsPracticeOpen(false);
-      setIsQuizOpen(true);
-      setTimeout(() => {
-        getQuizData();
-        getQuizMetaData();
-        getProgressInsights();
-      }, 250);
+      setShowEndQuizPrompt(true);
     });
   }, [currentVideoId]);
 
@@ -1471,6 +1501,40 @@ const CoursePlayer = () => {
                 data-plyr-provider="youtube"
                 data-plyr-embed-id={currentVideoId}
               />
+              <div
+                className={`absolute inset-0 z-20 flex items-center justify-center bg-black/70 px-4 ${
+                  showEndQuizPrompt ? "" : "hidden"
+                }`}
+              >
+                <div className="w-full max-w-md rounded-md border border-white/10 bg-[#111010]/95 p-5">
+                  <p className="text-[11px] font-black text-zinc-500 uppercase tracking-[0.2em]">
+                    Video Completed
+                  </p>
+                  <h3 className="mt-2 text-lg font-bold text-zinc-100">
+                    Do you want to attempt the quiz now?
+                  </h3>
+                  <p className="mt-2 text-sm text-zinc-400">
+                    If you skip, we will move to the next video.
+                  </p>
+                  <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={handleEndQuizYes}
+                      className="px-3 py-2 rounded-sm bg-[#2563EB] hover:bg-[#1d4fd8] text-black font-bold text-sm"
+                    >
+                      Give Quiz
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleEndQuizNo}
+                      disabled={activeIndex >= data?.length - 1}
+                      className="px-3 py-2 rounded-sm border border-white/10 bg-white/5 hover:bg-white/10 text-zinc-200 font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {activeIndex >= data?.length - 1 ? "No Next Video" : "Skip To Next Video"}
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <div className="md:mt-4 mt-6 ml-2">
