@@ -1,12 +1,11 @@
 import React from 'react'
-import { BookOpen, Clock, Trophy, Share2, Flame } from 'lucide-react'
+import { BookOpen, Clock, Trophy, Share2, Flame, CreditCard, ShieldCheck } from 'lucide-react'
 import { useState , useEffect } from 'react';
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
 
 const Profile = () => {
   const navigate = useNavigate();
-  // Mock Data for Stats
   const [user , setUser] = useState(null);
   const [coursesCreated, setCoursesCreated] = useState(null);
   const [hoursLearned, setHoursLearned] = useState(0);
@@ -21,6 +20,9 @@ const Profile = () => {
     date: ""
   });
   const [profileLoading, setProfileLoading] = useState(true);
+  const [planLoading, setPlanLoading] = useState(false);
+  const [paymentLoading, setPaymentLoading] = useState(false);
+  const [planNotice, setPlanNotice] = useState("");
   const [activitySummary, setActivitySummary] = useState({
     heatmap: {},
     streak: 0,
@@ -155,6 +157,62 @@ const getName=(name)=>{
   if(initial.length==1) return initial[0][0].toUpperCase();
   return(initial[0][0]+initial[1][0]).toUpperCase();
 }
+
+const currentPlan = `${user?.plan || "free"}`.toLowerCase();
+
+const updatePlan = async (plan) => {
+  if (!plan) return;
+  setPlanLoading(true);
+  setPlanNotice("");
+  try {
+    const res = await axios.post(
+      `${import.meta.env.VITE_API_URL}/auth/plan/update`,
+      { plan },
+      { withCredentials: true }
+    );
+    if (res?.data?.success) {
+      setUser((prev) => ({
+        ...(prev || {}),
+        plan: plan,
+      }));
+      setPlanNotice(`Plan updated to ${plan}.`);
+    } else {
+      setPlanNotice(res?.data?.message || "Unable to update plan.");
+    }
+  } catch (error) {
+    setPlanNotice(error?.response?.data?.message || "Unable to update plan.");
+  } finally {
+    setPlanLoading(false);
+  }
+};
+
+const checkoutTest = async (plan, amount) => {
+  if (!plan) return;
+  setPaymentLoading(true);
+  setPlanNotice("");
+  try {
+    const res = await axios.post(
+      `${import.meta.env.VITE_API_URL}/auth/plan/checkout-test`,
+      { plan, amount, currency: "INR" },
+      { withCredentials: true }
+    );
+    if (res?.data?.success) {
+      const payload = res?.data?.data || {};
+      setUser((prev) => ({
+        ...(prev || {}),
+        plan: payload?.plan || plan,
+        planPaymentHistory: payload?.paymentHistory || prev?.planPaymentHistory || [],
+      }));
+      setPlanNotice(`Test checkout successful. Activated ${plan}.`);
+    } else {
+      setPlanNotice(res?.data?.message || "Test checkout failed.");
+    }
+  } catch (error) {
+    setPlanNotice(error?.response?.data?.message || "Test checkout failed.");
+  } finally {
+    setPaymentLoading(false);
+  }
+};
 
 
   if (profileLoading || !user || coursesCreated === null)
@@ -436,7 +494,83 @@ const getName=(name)=>{
           ))}
         </div>
 
-        {/* 3. ACTIVITY HEATMAP */}
+        {/* 3. PLAN + BILLING */}
+        <div className="rounded-2xl border border-neutral-800 bg-[#0c0c0c]/80 backdrop-blur-md p-6 md:p-8 mb-10">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-5">
+            <div>
+              <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                <ShieldCheck size={18} className="text-blue-400" />
+                Plan & Billing
+              </h2>
+              <p className="text-xs text-gray-500 mt-1">
+                Use plan switch for rate-limit testing. Use test checkout to simulate plan upgrade.
+              </p>
+            </div>
+            <span className="text-xs px-3 py-1 rounded-sm border border-blue-500/30 bg-blue-500/10 text-blue-300 uppercase tracking-wider">
+              Current: {currentPlan}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {[
+              { key: "free", title: "Free", amount: 0, blurb: "Basic access with strict limits." },
+              { key: "student", title: "Student", amount: 149, blurb: "Higher limits for active learners." },
+              { key: "pro", title: "Pro", amount: 499, blurb: "Max limits and fastest throughput." },
+            ].map((plan) => (
+              <div key={plan.key} className={`rounded-sm border p-4 ${
+                currentPlan === plan.key
+                  ? "border-blue-500/40 bg-blue-500/10"
+                  : "border-white/10 bg-black/20"
+              }`}>
+                <p className="text-sm font-bold text-zinc-100">{plan.title}</p>
+                <p className="text-xs text-zinc-500 mt-1">{plan.blurb}</p>
+                <p className="text-xl font-black text-white mt-2">
+                  {plan.amount === 0 ? "Free" : `INR ${plan.amount}/mo`}
+                </p>
+
+                <div className="mt-3 flex flex-col gap-2">
+                  <button
+                    onClick={() => updatePlan(plan.key)}
+                    disabled={planLoading}
+                    className="text-xs px-3 py-2 rounded-sm border border-white/10 bg-white/5 text-zinc-200 hover:bg-white/10 disabled:opacity-60"
+                  >
+                    {planLoading ? "Updating..." : "Switch Plan"}
+                  </button>
+                  {plan.key !== "free" ? (
+                    <button
+                      onClick={() => checkoutTest(plan.key, plan.amount)}
+                      disabled={paymentLoading}
+                      className="text-xs px-3 py-2 rounded-sm bg-[#2563EB] text-black font-bold hover:bg-[#1d4fd8] disabled:opacity-60 flex items-center justify-center gap-2"
+                    >
+                      <CreditCard size={12} />
+                      {paymentLoading ? "Processing..." : "Test Checkout"}
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {planNotice ? (
+            <p className="mt-4 text-xs text-blue-300">{planNotice}</p>
+          ) : null}
+
+          <div className="mt-4">
+            <p className="text-xs text-zinc-500 uppercase tracking-[0.2em] mb-2">Recent Transactions</p>
+            <div className="space-y-2 max-h-28 overflow-y-auto custom-scrollbar pr-1">
+              {(user?.planPaymentHistory || []).slice(0, 5).map((item, idx) => (
+                <div key={idx} className="text-xs text-zinc-300 border border-white/10 rounded-sm bg-white/3 px-2 py-1.5">
+                  {item?.plan || "-"} | {item?.currency || "INR"} {item?.amount || 0} | {item?.paymentStatus || "success"} | {item?.paidAt ? new Date(item.paidAt).toLocaleString() : "now"}
+                </div>
+              ))}
+              {!(user?.planPaymentHistory || []).length && (
+                <p className="text-xs text-zinc-500">No transactions yet.</p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* 4. ACTIVITY HEATMAP */}
         <div className="rounded-2xl border border-neutral-800 bg-[#0c0c0c]/80 backdrop-blur-md p-6 md:p-8">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-lg font-semibold text-white">Learning Activity</h2>

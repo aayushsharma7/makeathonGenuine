@@ -28,6 +28,18 @@ const quizQuestionSchema = new mongoose.Schema({
     hint: {
         type: String,
         default: ""
+    },
+    sourceStartSeconds: {
+        type: Number,
+        default: 0
+    },
+    sourceEndSeconds: {
+        type: Number,
+        default: 0
+    },
+    sourceContext: {
+        type: String,
+        default: ""
     }
 }, { _id: false });
 

@@ -10,7 +10,18 @@ const transcriptModel = new mongoose.Schema({
         duration: Number,
         offset: Number,
         lang: String
-    }]
+    }],
+    rag: {
+        indexedAt: Date,
+        chunksCount: {
+            type: Number,
+            default: 0
+        },
+        model: {
+            type: String,
+            default: ""
+        }
+    }
 },{timestamps: true});
 
 

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import { ArrowRight, MessageCircle, ListPlus } from "lucide-react";
@@ -11,7 +11,9 @@ const OnboardingPage = () => {
   const [preferredLanguage, setPreferredLanguage] = useState("");
   const [chatInput, setChatInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [chatLoading, setChatLoading] = useState(false);
   const [profileId, setProfileId] = useState("");
+  const [inlineError, setInlineError] = useState("");
   const [chatMessages, setChatMessages] = useState([
     {
       role: "assistant",
@@ -20,6 +22,24 @@ const OnboardingPage = () => {
   ]);
   const [recommendations, setRecommendations] = useState([]);
   const navigate = useNavigate();
+  const getApiData = (response) => response?.data?.data ?? response?.data ?? {};
+
+  const checkAuth = async () => {
+    try {
+      const responsePost = await axios.get(`${import.meta.env.VITE_API_URL}/auth/check`, {
+        withCredentials: true,
+      });
+      if (!responsePost?.data?.success) {
+        navigate("/login");
+      }
+    } catch {
+      navigate("/login");
+    }
+  };
+
+  useEffect(() => {
+    checkAuth();
+  }, []);
 
   const goPath1 = () => {
     navigate("/create?onboarding=path1");
@@ -37,6 +57,8 @@ const OnboardingPage = () => {
     }
 
     try {
+      setChatLoading(true);
+      setInlineError("");
       const newMessages = [...chatMessages, { role: "user", content: userText }];
       setChatMessages(newMessages);
       setChatInput("");
@@ -47,13 +69,35 @@ const OnboardingPage = () => {
         { withCredentials: true }
       );
 
-      setChatMessages((prev) => [...prev, res.data?.data || { role: "assistant", content: "I am ready with recommendations." }]);
+      const payload = getApiData(res);
+      setChatMessages((prev) => [...prev, payload || { role: "assistant", content: "I am ready with recommendations." }]);
+      if(payload?.extracted){
+        if(payload.extracted.goal && !goal){
+          setGoal(payload.extracted.goal);
+        }
+        if(payload.extracted.background && !background){
+          setBackground(payload.extracted.background);
+        }
+        if(payload.extracted.timePerDay && !timePerDay){
+          setTimePerDay(payload.extracted.timePerDay);
+        }
+        if(payload.extracted.preferredLanguage && !preferredLanguage){
+          setPreferredLanguage(payload.extracted.preferredLanguage);
+        }
+      }
     } catch (error) {
       console.log(error);
+      if(error?.response?.status === 401){
+        navigate("/login");
+        return;
+      }
+      setInlineError(error?.response?.data?.message || "Unable to chat right now.");
       setChatMessages((prev) => [
         ...prev,
         { role: "assistant", content: error?.response?.data?.message || "Unable to chat right now. You can still generate recommendations." },
       ]);
+    } finally {
+      setChatLoading(false);
     }
   };
 
@@ -64,6 +108,7 @@ const OnboardingPage = () => {
     }
     setLoading(true);
     try {
+      setInlineError("");
       const res = await axios.post(
         `${import.meta.env.VITE_API_URL}/onboarding/path2/recommend`,
         {
@@ -75,14 +120,29 @@ const OnboardingPage = () => {
         { withCredentials: true }
       );
 
-      const recs = res.data?.data?.recommendations || [];
-      setProfileId(res.data?.data?.profileId || "");
+      const payload = getApiData(res);
+      const recs = payload?.recommendations || [];
+      setProfileId(payload?.profileId || "");
       setRecommendations(recs);
+      if(payload?.bestChoice){
+        setChatMessages((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            content: `Top recommendation ready: ${payload.bestChoice.title}. You can review and select it below.`,
+          },
+        ]);
+      }
       if (recs.length === 0) {
         setChatMessages((prev) => [...prev, { role: "assistant", content: "No recommendations found, try changing your goal." }]);
       }
     } catch (error) {
       console.log(error);
+      if(error?.response?.status === 401){
+        navigate("/login");
+        return;
+      }
+      setInlineError(error?.response?.data?.message || "Could not generate recommendations.");
       setChatMessages((prev) => [...prev, { role: "assistant", content: error?.response?.data?.message || "Could not generate recommendations." }]);
     } finally {
       setLoading(false);
@@ -232,13 +292,15 @@ const OnboardingPage = () => {
               <button
                 type="button"
                 onClick={handlePath2Chat}
-                className="bg-white/5 hover:bg-white/10 text-white text-sm font-semibold px-4 py-2 rounded-sm border border-white/10"
+                disabled={chatLoading}
+                className="bg-white/5 hover:bg-white/10 disabled:opacity-60 disabled:cursor-not-allowed text-white text-sm font-semibold px-4 py-2 rounded-sm border border-white/10"
               >
-                Ask Chatbot
+                {chatLoading ? "Thinking..." : "Ask Chatbot"}
               </button>
               <button
                 onClick={getRecommendations}
-                className="bg-[#2563EB] hover:bg-[#2543EB] text-black text-sm font-black px-4 py-2 rounded-sm"
+                disabled={loading}
+                className="bg-[#2563EB] hover:bg-[#2543EB] disabled:opacity-60 disabled:cursor-not-allowed text-black text-sm font-black px-4 py-2 rounded-sm"
               >
                 {loading ? "Generating..." : "Get Recommendations"}
               </button>
@@ -247,6 +309,11 @@ const OnboardingPage = () => {
 
           <div className="bg-[#111010]/70 border border-white/10 rounded-md p-6">
             <h3 className="text-white text-lg font-black mb-4">Chat + Recommendations</h3>
+            {inlineError ? (
+              <div className="mb-3 text-xs text-red-300 border border-red-500/30 bg-red-500/10 rounded-sm px-3 py-2">
+                {inlineError}
+              </div>
+            ) : null}
             <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar mb-4">
               {chatMessages.map((msg, idx) => (
                 <div key={idx} className={`text-sm p-2 rounded-sm break-words ${msg.role === "assistant" ? "bg-white/5 text-zinc-300" : "bg-[#2563EB]/10 text-[#9ab9ff]"}`}>

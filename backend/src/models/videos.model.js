@@ -72,6 +72,14 @@ const videoModel = new mongoose.Schema({
         type: String,
         default: "General"
     },
+    moduleOrder: {
+        type: Number,
+        default: 999
+    },
+    modulePosition: {
+        type: Number,
+        default: 999
+    },
     priorityScore: {
         type: Number,
         default: 50

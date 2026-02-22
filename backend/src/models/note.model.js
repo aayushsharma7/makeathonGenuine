@@ -15,6 +15,40 @@ const notesModel = new mongoose.Schema({
         type: String,
         default: "",
         required: true
+    },
+    category: {
+        type: String,
+        default: "theory"
+    },
+    reviewLevel: {
+        type: Number,
+        default: 0
+    },
+    nextReviewAt: {
+        type: Date,
+        default: Date.now
+    },
+    lastReviewedAt: {
+        type: Date,
+        default: null
+    },
+    reviewHistory: [{
+        reviewedAt: {
+            type: Date,
+            default: Date.now
+        },
+        rating: {
+            type: Number,
+            default: 3
+        },
+        nextReviewAt: {
+            type: Date,
+            default: Date.now
+        }
+    }],
+    isArchived: {
+        type: Boolean,
+        default: false
     }
 },{timestamps: true});
 

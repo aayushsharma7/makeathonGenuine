@@ -24,7 +24,9 @@ export const signupController = async (req,res) => {
         const newUser = new User({
             username,
             email,
-            password: hashedPassword
+            password: hashedPassword,
+            plan: "free",
+            planUpdatedAt: new Date()
         })
         await newUser.save();
 
@@ -67,7 +69,8 @@ export const loginController = async (req,res) => {
             email: user.email,
             id: user._id,
             createdAt: user.createdAt,
-            lastCoursePlayed: user.lastCoursePlayed
+            lastCoursePlayed: user.lastCoursePlayed,
+            plan: user.plan || "free"
         });
         
     } catch (error) {
@@ -94,10 +97,78 @@ export const continueController = async (req,res) => {
         id: req.user._id,
         createdAt: req.user.createdAt,
         lastCoursePlayed: req.user.lastCoursePlayed,
+        plan: req.user.plan || "free",
+        planUpdatedAt: req.user.planUpdatedAt || null,
         heatmapActivity: req.user.heatmapActivity || [],
-        courseDailyProgress: req.user.courseDailyProgress || []
+        courseDailyProgress: req.user.courseDailyProgress || [],
+        planPaymentHistory: req.user.planPaymentHistory || []
     });
 }
+
+export const getPlanController = async (req,res) => {
+    return sendSuccess(res, 200, "Plan fetched successfully", {
+        plan: req.user.plan || "free",
+        planUpdatedAt: req.user.planUpdatedAt || null,
+        paymentHistory: req.user.planPaymentHistory || []
+    });
+}
+
+export const updatePlanController = async (req,res) => {
+    try {
+        const { plan = "free" } = req.body;
+        const normalized = `${plan || ""}`.trim().toLowerCase();
+        if(!["free", "student", "pro"].includes(normalized)){
+            return sendError(res, 400, "Invalid plan");
+        }
+
+        req.user.plan = normalized;
+        req.user.planUpdatedAt = new Date();
+        await req.user.save();
+
+        return sendSuccess(res, 200, "Plan updated successfully", {
+            plan: req.user.plan,
+            planUpdatedAt: req.user.planUpdatedAt
+        });
+    } catch (error) {
+        return sendError(res, 500, "Error occured", error.message);
+    }
+}
+
+export const checkoutTestController = async (req,res) => {
+    try {
+        const { plan = "", amount = 0, currency = "INR" } = req.body;
+        const normalized = `${plan || ""}`.trim().toLowerCase();
+        if(!["student", "pro"].includes(normalized)){
+            return sendError(res, 400, "Invalid paid plan");
+        }
+
+        const paidAmount = Number(amount || 0);
+        req.user.plan = normalized;
+        req.user.planUpdatedAt = new Date();
+        req.user.planPaymentHistory = [
+            {
+                plan: normalized,
+                amount: Number.isFinite(paidAmount) ? paidAmount : 0,
+                currency: `${currency || "INR"}`.trim().toUpperCase() || "INR",
+                paymentStatus: "success",
+            transactionRef: `TEST_${Date.now()}_${Math.floor(Math.random() * 10000)}`
+        },
+            ...(req.user.planPaymentHistory || [])
+        ].slice(0, 20);
+        await req.user.save();
+
+        return sendSuccess(res, 200, "Test payment successful", {
+            plan: req.user.plan,
+            planUpdatedAt: req.user.planUpdatedAt,
+            paymentHistory: req.user.planPaymentHistory || []
+        });
+    } catch (error) {
+        return sendError(res, 500, "Error occured", error.message);
+    }
+}
+
+// Backward-compatible export for existing imports/routes.
+export const checkoutSandboxController = checkoutTestController;
 
 export const activitySummaryController = async (req,res) => {
     try {

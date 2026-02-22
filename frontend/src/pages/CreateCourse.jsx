@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import { useLocation, useNavigate } from "react-router-dom";
-import { ArrowRight, LucideAlignCenter, Mail, Plus, Trash2, Video } from "lucide-react";
+import { ArrowRight, ChevronLeft, LucideAlignCenter, Mail, Plus, Trash2, Video, X } from "lucide-react";
 
 const DEFAULT_PERSONALIZATION = {
   experienceLevel: "",
@@ -14,6 +14,85 @@ const DEFAULT_PERSONALIZATION = {
   knownTopics: "",
 };
 
+const PERSONALIZATION_FLOW = [
+  {
+    key: "targetGoal",
+    label: "What is your primary goal for this course?",
+    type: "text",
+    placeholder: "e.g. internship prep in 2 months",
+    required: true,
+  },
+  {
+    key: "experienceLevel",
+    label: "What is your current experience level?",
+    type: "select",
+    options: [
+      { value: "beginner", label: "Beginner" },
+      { value: "intermediate", label: "Intermediate" },
+      { value: "advanced", label: "Advanced" },
+    ],
+    required: true,
+  },
+  {
+    key: "codingConfidence",
+    label: "How confident are you in coding right now?",
+    type: "select",
+    options: [
+      { value: "1", label: "1 - Low" },
+      { value: "2", label: "2" },
+      { value: "3", label: "3" },
+      { value: "4", label: "4" },
+      { value: "5", label: "5 - High" },
+    ],
+    required: true,
+  },
+  {
+    key: "timePerDay",
+    label: "How much time can you invest daily?",
+    type: "text",
+    placeholder: "e.g. 1 hour",
+    required: true,
+  },
+  {
+    key: "learningStyle",
+    label: "Pick your preferred learning style",
+    type: "select",
+    options: [
+      { value: "quick", label: "Quick revision focused" },
+      { value: "balanced", label: "Balanced" },
+      { value: "deep", label: "Deep conceptual" },
+    ],
+    required: true,
+  },
+  {
+    key: "goalUrgency",
+    label: "How urgent is your goal?",
+    type: "select",
+    options: [
+      { value: "low", label: "Low" },
+      { value: "medium", label: "Medium" },
+      { value: "high", label: "High" },
+    ],
+    required: true,
+  },
+  {
+    key: "knownTopics",
+    label: "Which topics are you already comfortable with?",
+    type: "text",
+    placeholder: "comma separated e.g. arrays, loops, jsx",
+    required: false,
+  },
+  {
+    key: "priorExposure",
+    label: "Any prior exposure/context we should consider?",
+    type: "text",
+    placeholder: "short note (optional)",
+    required: false,
+  },
+];
+
+const REQUIRED_PERSONALIZATION_KEYS = PERSONALIZATION_FLOW.filter((item) => item.required).map((item) => item.key);
+
 const CreateCourse = () => {
   const [playlist, setPlaylist] = useState("");
   const [videoUrls, setVideoUrls] = useState([""]);
@@ -24,11 +103,16 @@ const CreateCourse = () => {
   const [infor, setInfor] = useState({});
   const [onboardingPath, setOnboardingPath] = useState("direct");
   const [personalization, setPersonalization] = useState(DEFAULT_PERSONALIZATION);
+  const [isWizardOpen, setIsWizardOpen] = useState(false);
+  const [wizardStep, setWizardStep] = useState(0);
 
   const navigate = useNavigate();
   const location = useLocation();
 
   const isCustomMode = mode === "custom";
+  const activeWizardQuestion = PERSONALIZATION_FLOW[wizardStep];
+  const isPersonalizationDone = REQUIRED_PERSONALIZATION_KEYS.every((key) => `${personalization[key] || ""}`.trim());
+  const personalizationProgress = Math.floor(((wizardStep + 1) / PERSONALIZATION_FLOW.length) * 100);
 
   const filteredVideoUrls = useMemo(
     () => videoUrls.map((item) => item.trim()).filter(Boolean),
@@ -60,6 +144,7 @@ const CreateCourse = () => {
 
     if (pathValue === "path1" || pathValue === "path2") {
       setOnboardingPath(pathValue);
+      setIsWizardOpen(true);
     }
     if (customValue === "custom") {
       setMode("custom");
@@ -92,14 +177,6 @@ const CreateCourse = () => {
     }
   }, []);
 
-  const personalizationHandle = (e) => {
-    const { name, value } = e.target;
-    setPersonalization((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
-  };
-
   const setVideoUrlAt = (index, value) => {
     setVideoUrls((prev) => prev.map((item, idx) => (idx === index ? value : item)));
   };
@@ -131,6 +208,13 @@ const CreateCourse = () => {
 
     if (isCustomMode && filteredVideoUrls.length === 0) {
       setStatusCode({ code: 400, data: "Add at least one YouTube video URL" });
+      return;
+    }
+
+    if (!isPersonalizationDone) {
+      setIsWizardOpen(true);
+      setWizardStep(0);
+      setStatusCode({ code: 400, data: "Please complete quick personalization first." });
       return;
     }
 
@@ -191,6 +275,57 @@ const CreateCourse = () => {
       setLoading(false);
     }
   };
+
+  const handleWizardValue = (value) => {
+    if (!activeWizardQuestion) {
+      return;
+    }
+    setPersonalization((prev) => ({
+      ...prev,
+      [activeWizardQuestion.key]: value,
+    }));
+  };
+
+  const goNextStep = () => {
+    if (!activeWizardQuestion) {
+      return;
+    }
+    const currentValue = `${personalization[activeWizardQuestion.key] || ""}`.trim();
+    if (activeWizardQuestion.required && !currentValue) {
+      setStatusCode({ code: 400, data: "Please answer this question to continue." });
+      return;
+    }
+    setStatusCode({});
+    if (wizardStep >= PERSONALIZATION_FLOW.length - 1) {
+      setIsWizardOpen(false);
+      return;
+    }
+    setWizardStep((prev) => prev + 1);
+  };
+
+  const goPrevStep = () => {
+    if (wizardStep === 0) {
+      return;
+    }
+    setWizardStep((prev) => prev - 1);
+  };
+
+  const openWizard = () => {
+    setStatusCode({});
+    setIsWizardOpen(true);
+    const firstMissingIndex = PERSONALIZATION_FLOW.findIndex((item) => item.required && !`${personalization[item.key] || ""}`.trim());
+    setWizardStep(firstMissingIndex === -1 ? 0 : firstMissingIndex);
+  };
+
+  useEffect(() => {
+    if (!isWizardOpen) {
+      return;
+    }
+    const firstMissingIndex = PERSONALIZATION_FLOW.findIndex((item) => item.required && !`${personalization[item.key] || ""}`.trim());
+    if (firstMissingIndex !== -1) {
+      setWizardStep(firstMissingIndex);
+    }
+  }, [isWizardOpen]);
 
   if (loading) {
     return (
@@ -326,92 +461,30 @@ const CreateCourse = () => {
             </div>
 
             <div className="pt-2 border-t border-white/10">
-              <h3 className="text-sm font-black text-zinc-300 tracking-wider uppercase mb-4">Personalize This Course</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <input
-                  type="text"
-                  name="targetGoal"
-                  value={personalization.targetGoal}
-                  onChange={personalizationHandle}
-                  placeholder="Goal (e.g. internship prep)"
-                  className="bg-[#111010] border border-zinc-800 rounded-sm px-4 py-3 text-white text-sm placeholder:text-zinc-600 focus:outline-none focus:border-[#2563EB]"
-                  required
-                />
-                <input
-                  type="text"
-                  name="knownTopics"
-                  value={personalization.knownTopics}
-                  onChange={personalizationHandle}
-                  placeholder="Known topics (comma separated)"
-                  className="bg-[#111010] border border-zinc-800 rounded-sm px-4 py-3 text-white text-sm placeholder:text-zinc-600 focus:outline-none focus:border-[#2563EB]"
-                />
-                <select
-                  name="experienceLevel"
-                  value={personalization.experienceLevel}
-                  onChange={personalizationHandle}
-                  className="bg-[#111010] border border-zinc-800 rounded-sm px-4 py-3 text-white text-sm focus:outline-none focus:border-[#2563EB]"
-                  required
+              <div className="flex items-center justify-between gap-2 mb-4">
+                <h3 className="text-sm font-black text-zinc-300 tracking-wider uppercase">Personalization</h3>
+                <button
+                  type="button"
+                  onClick={openWizard}
+                  className="text-xs px-3 py-1.5 rounded-sm border border-white/10 bg-white/5 text-zinc-200 hover:bg-white/10"
                 >
-                  <option value="">Experience level</option>
-                  <option value="beginner">Beginner</option>
-                  <option value="intermediate">Intermediate</option>
-                  <option value="advanced">Advanced</option>
-                </select>
-                <select
-                  name="codingConfidence"
-                  value={personalization.codingConfidence}
-                  onChange={personalizationHandle}
-                  className="bg-[#111010] border border-zinc-800 rounded-sm px-4 py-3 text-white text-sm focus:outline-none focus:border-[#2563EB]"
-                  required
-                >
-                  <option value="">Coding confidence (1-5)</option>
-                  <option value="1">1 - Low</option>
-                  <option value="2">2</option>
-                  <option value="3">3</option>
-                  <option value="4">4</option>
-                  <option value="5">5 - High</option>
-                </select>
-                <input
-                  type="text"
-                  name="timePerDay"
-                  value={personalization.timePerDay}
-                  onChange={personalizationHandle}
-                  placeholder="Time/day (e.g. 1 hour)"
-                  className="bg-[#111010] border border-zinc-800 rounded-sm px-4 py-3 text-white text-sm placeholder:text-zinc-600 focus:outline-none focus:border-[#2563EB]"
-                  required
-                />
-                <select
-                  name="learningStyle"
-                  value={personalization.learningStyle}
-                  onChange={personalizationHandle}
-                  className="bg-[#111010] border border-zinc-800 rounded-sm px-4 py-3 text-white text-sm focus:outline-none focus:border-[#2563EB]"
-                  required
-                >
-                  <option value="">Learning style</option>
-                  <option value="quick">Quick revision focused</option>
-                  <option value="balanced">Balanced</option>
-                  <option value="deep">Deep conceptual</option>
-                </select>
-                <select
-                  name="goalUrgency"
-                  value={personalization.goalUrgency}
-                  onChange={personalizationHandle}
-                  className="bg-[#111010] border border-zinc-800 rounded-sm px-4 py-3 text-white text-sm focus:outline-none focus:border-[#2563EB]"
-                  required
-                >
-                  <option value="">Goal urgency</option>
-                  <option value="low">Low</option>
-                  <option value="medium">Medium</option>
-                  <option value="high">High</option>
-                </select>
-                <input
-                  type="text"
-                  name="priorExposure"
-                  value={personalization.priorExposure}
-                  onChange={personalizationHandle}
-                  placeholder="Prior exposure (short note)"
-                  className="bg-[#111010] border border-zinc-800 rounded-sm px-4 py-3 text-white text-sm placeholder:text-zinc-600 focus:outline-none focus:border-[#2563EB]"
-                />
+                  {isPersonalizationDone ? "Edit Answers" : "Start Quick Questions"}
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {PERSONALIZATION_FLOW.map((item) => {
+                  const filled = `${personalization[item.key] || ""}`.trim().length > 0;
+                  return (
+                    <span
+                      key={item.key}
+                      className={`text-[10px] px-2 py-1 rounded-sm border ${
+                        filled ? "border-[#2563EB]/30 text-[#b2c8ff] bg-[#2563EB]/10" : "border-white/10 text-zinc-500 bg-white/3"
+                      }`}
+                    >
+                      {item.key}
+                    </span>
+                  );
+                })}
               </div>
             </div>
 
@@ -430,6 +503,91 @@ const CreateCourse = () => {
               </p>
             </div>
           </form>
+        </div>
+      </div>
+
+      <div className={`${isWizardOpen ? "" : "hidden"} fixed inset-0 z-40 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4`}>
+        <div className="w-full max-w-xl border border-white/10 bg-[#111010] rounded-md p-5">
+          <div className="flex items-center justify-between gap-2 mb-4">
+            <p className="text-xs uppercase tracking-[0.2em] text-zinc-500 font-black">Personalize Course</p>
+            <button
+              type="button"
+              onClick={() => setIsWizardOpen(false)}
+              className="p-1 rounded-sm border border-white/10 bg-white/5 text-zinc-300 hover:bg-white/10"
+            >
+              <X size={14} />
+            </button>
+          </div>
+
+          <div className="mb-3">
+            <div className="flex items-center justify-between text-xs text-zinc-500 mb-2">
+              <span>
+                Question {wizardStep + 1} of {PERSONALIZATION_FLOW.length}
+              </span>
+              <span>{personalizationProgress}%</span>
+            </div>
+            <div className="h-1 w-full rounded-full bg-zinc-800/70 overflow-hidden">
+              <div className="h-full bg-[#2563EB]" style={{ width: `${personalizationProgress}%` }} />
+            </div>
+          </div>
+
+          {activeWizardQuestion ? (
+            <div className="space-y-4">
+              <h4 className="text-white text-lg font-black leading-tight">{activeWizardQuestion.label}</h4>
+              {activeWizardQuestion.type === "select" ? (
+                <select
+                  value={personalization[activeWizardQuestion.key]}
+                  onChange={(e) => handleWizardValue(e.target.value)}
+                  className="w-full bg-[#0f0f0f] border border-zinc-800 rounded-sm px-4 py-3 text-white text-sm focus:outline-none focus:border-[#2563EB]"
+                >
+                  <option value="">Select an option</option>
+                  {activeWizardQuestion.options?.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  type="text"
+                  value={personalization[activeWizardQuestion.key]}
+                  onChange={(e) => handleWizardValue(e.target.value)}
+                  placeholder={activeWizardQuestion.placeholder}
+                  className="w-full bg-[#0f0f0f] border border-zinc-800 rounded-sm px-4 py-3 text-white text-sm placeholder:text-zinc-600 focus:outline-none focus:border-[#2563EB]"
+                />
+              )}
+
+              <div className="flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={goPrevStep}
+                  disabled={wizardStep === 0}
+                  className="text-xs px-3 py-2 rounded-sm border border-white/10 bg-white/5 text-zinc-200 hover:bg-white/10 disabled:opacity-40 flex items-center gap-1"
+                >
+                  <ChevronLeft size={14} />
+                  Back
+                </button>
+                <div className="flex items-center gap-2">
+                  {!activeWizardQuestion.required ? (
+                    <button
+                      type="button"
+                      onClick={goNextStep}
+                      className="text-xs px-3 py-2 rounded-sm border border-white/10 bg-white/5 text-zinc-200 hover:bg-white/10"
+                    >
+                      Skip
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={goNextStep}
+                    className="text-xs px-3 py-2 rounded-sm bg-[#2563EB] text-black font-bold hover:bg-[#2543EB]"
+                  >
+                    {wizardStep === PERSONALIZATION_FLOW.length - 1 ? "Done" : "Next"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
     </div>

@@ -15,6 +15,41 @@ const userModel = new mongoose.Schema({
         type: String,
         required: true
     },
+    plan: {
+        type: String,
+        enum: ["free", "student", "pro"],
+        default: "free"
+    },
+    planUpdatedAt: {
+        type: Date
+    },
+    planPaymentHistory: [{
+        plan: {
+            type: String,
+            enum: ["free", "student", "pro"],
+            default: "free"
+        },
+        amount: {
+            type: Number,
+            default: 0
+        },
+        currency: {
+            type: String,
+            default: "INR"
+        },
+        paymentStatus: {
+            type: String,
+            default: "success"
+        },
+        transactionRef: {
+            type: String,
+            default: ""
+        },
+        paidAt: {
+            type: Date,
+            default: Date.now
+        }
+    }],
     lastCoursePlayed: {
         type: String
     },

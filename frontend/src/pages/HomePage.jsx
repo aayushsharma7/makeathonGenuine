@@ -17,18 +17,23 @@ const getSubjectLabel = (subject = "") => {
     .join(" ");
 };
 
+const DEFAULT_SUBJECT_OPTIONS = [
+  "general",
+  "dsa",
+  "web-development",
+  "ai-ml",
+  "core-cs",
+  "electronics",
+];
+
 const HomePage = () => {
   const [courses, setCourses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [infor, setInfor] = useState({});
   const [lastCoursePlayed, setLastCoursePlayed] = useState("none");
   const [selectedSubject, setSelectedSubject] = useState("all");
-  const [subjectUpdate, setSubjectUpdate] = useState({
-    courseId: "",
-    subject: "",
-  });
-  const [subjectUpdateStatus, setSubjectUpdateStatus] = useState("");
-  const [subjectUpdateLoading, setSubjectUpdateLoading] = useState(false);
+  const [subjectSavingMap, setSubjectSavingMap] = useState({});
+  const [subjectErrorMap, setSubjectErrorMap] = useState({});
 
   const navigate = useNavigate();
 
@@ -90,26 +95,18 @@ const HomePage = () => {
     }
   };
 
-  const handleSubjectAssign = async (e) => {
-    e.preventDefault();
-    setSubjectUpdateStatus("");
-
-    if (!subjectUpdate.courseId) {
-      setSubjectUpdateStatus("Select a course first.");
+  const handleSubjectAssign = async (courseId, subject) => {
+    if (!courseId || !subject.trim()) {
       return;
     }
-    if (!subjectUpdate.subject.trim()) {
-      setSubjectUpdateStatus("Enter a subject.");
-      return;
-    }
-
-    setSubjectUpdateLoading(true);
+    setSubjectErrorMap((prev) => ({ ...prev, [courseId]: "" }));
+    setSubjectSavingMap((prev) => ({ ...prev, [courseId]: true }));
     try {
       const response = await axios.post(
         `${import.meta.env.VITE_API_URL}/course/update/subject`,
         {
-          courseId: subjectUpdate.courseId,
-          subject: subjectUpdate.subject,
+          courseId,
+          subject,
         },
         {
           withCredentials: true,
@@ -118,17 +115,16 @@ const HomePage = () => {
       );
 
       if (response.status === 200 && response.data?.success) {
-        setSubjectUpdateStatus("Subject updated successfully.");
-        await getData();
+        const updatedSubject = response?.data?.data?.subject || subject;
+        setCourses((prev) => prev.map((item) => (item._id === courseId ? { ...item, subject: updatedSubject } : item)));
         return;
       }
-
-      setSubjectUpdateStatus(response.data?.message || "Unable to update subject.");
+      setSubjectErrorMap((prev) => ({ ...prev, [courseId]: response?.data?.message || "Failed to update category" }));
     } catch (error) {
       console.log(error);
-      setSubjectUpdateStatus("Unable to update subject.");
+      setSubjectErrorMap((prev) => ({ ...prev, [courseId]: error?.response?.data?.message || "Failed to update category" }));
     } finally {
-      setSubjectUpdateLoading(false);
+      setSubjectSavingMap((prev) => ({ ...prev, [courseId]: false }));
     }
   };
 
@@ -141,7 +137,15 @@ const HomePage = () => {
     const dynamicSubjects = Array.from(
       new Set(courses.map((course) => course.subject || "general").filter(Boolean))
     );
-    return dynamicSubjects.length ? dynamicSubjects : ["general"];
+    const normalized = dynamicSubjects.length ? dynamicSubjects : ["general"];
+    return ["all", ...normalized];
+  }, [courses]);
+
+  const assignableSubjectList = useMemo(() => {
+    const dynamicSubjects = Array.from(
+      new Set(courses.map((course) => course.subject || "general").filter(Boolean))
+    );
+    return Array.from(new Set([...DEFAULT_SUBJECT_OPTIONS, ...dynamicSubjects]));
   }, [courses]);
 
   const coursesBySubject = useMemo(() => {
@@ -192,7 +196,22 @@ const HomePage = () => {
             </span>
           </div>
 
-          <div className="absolute inset-0 z-20 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+          <div className="absolute top-3 right-3 z-30" onClick={(e) => e.stopPropagation()}>
+            <select
+              value={course.subject || "general"}
+              onChange={(e) => handleSubjectAssign(course._id, e.target.value)}
+              className="text-[10px] px-2 py-1 rounded-sm bg-black/70 text-zinc-200 border border-white/10 uppercase tracking-wider focus:outline-none pointer-events-auto"
+            >
+              {assignableSubjectList
+                .map((item) => (
+                  <option key={item} value={item}>
+                    {getSubjectLabel(item)}
+                  </option>
+                ))}
+            </select>
+          </div>
+
+          <div className="absolute inset-0 z-20 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none">
             <div className="w-14 h-14 bg-white rounded-lg border-2 border-black flex items-center justify-center transform scale-50 group-hover:scale-100 transition-transform duration-300">
               <button
                 onClick={(e) => {
@@ -200,7 +219,7 @@ const HomePage = () => {
                   handleLastPlayedCourse(course._id);
                   goToCourse(course._id, course.title);
                 }}
-                className="cursor-pointer"
+                className="cursor-pointer pointer-events-auto"
               >
                 <Play fill="black" className="w-5 h-5 ml-1 text-black" />
               </button>
@@ -211,7 +230,7 @@ const HomePage = () => {
         <div className="p-6 pt-5 relative z-20">
           <div className="flex justify-between items-start mb-3">
             <div className="flex flex-col">
-              <h3 className="text-xl capitalize font-bold text-white leading-tight mb-1 group-hover:text-[#2563EB] transition-colors duration-300">
+              <h3 className="text-xl truncate  capitalize font-bold text-white leading-tight mb-1 group-hover:text-[#2563EB] transition-colors duration-300">
                 {course.title}
               </h3>
               <div className="flex items-center gap-2 text-zinc-500 text-xs font-semibold tracking-wider">
@@ -237,6 +256,21 @@ const HomePage = () => {
             </span>
             <span className="text-[13px] font-bold text-zinc-500 group-hover:text-zinc-300 transition-colors">
               Modules: {course.learningModules?.length || 0}
+            </span>
+            <span
+              className={`text-[11px] ${
+                subjectSavingMap[course._id]
+                  ? "text-[#9fb9ff]"
+                  : subjectErrorMap[course._id]
+                    ? "text-red-400"
+                    : "text-zinc-600"
+              }`}
+            >
+              {subjectSavingMap[course._id]
+                ? "Saving category..."
+                : subjectErrorMap[course._id]
+                  ? subjectErrorMap[course._id]
+                  : ""}
             </span>
           </div>
         </div>
@@ -318,54 +352,6 @@ const HomePage = () => {
               </Link>
             </div>
           </div>
-        </div>
-
-        <div className="mb-10 border border-white/10 bg-[#111010]/50 rounded-md p-4">
-          <p className="text-xs uppercase tracking-[0.2em] text-zinc-500 font-black mb-3">
-            Assign Course To Subject
-          </p>
-          <form onSubmit={handleSubjectAssign} className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <select
-              value={subjectUpdate.courseId}
-              onChange={(e) => setSubjectUpdate((prev) => ({ ...prev, courseId: e.target.value }))}
-              className="bg-[#0f0f0f] border border-zinc-800 rounded-sm px-3 py-3 text-zinc-200 text-sm focus:outline-none focus:border-[#2563EB]"
-            >
-              <option value="">Select Course</option>
-              {courses.map((course) => (
-                <option key={course._id} value={course._id}>
-                  {course.title}
-                </option>
-              ))}
-            </select>
-
-            <input
-              value={subjectUpdate.subject}
-              onChange={(e) => setSubjectUpdate((prev) => ({ ...prev, subject: e.target.value }))}
-              placeholder="Type subject (e.g. electronics)"
-              className="bg-[#0f0f0f] border border-zinc-800 rounded-sm px-3 py-3 text-zinc-200 text-sm focus:outline-none focus:border-[#2563EB]"
-              list="subject-options"
-            />
-            <datalist id="subject-options">
-              {subjectList.map((item) => (
-                <option key={item} value={item} />
-              ))}
-            </datalist>
-
-            <button
-              type="submit"
-              disabled={subjectUpdateLoading}
-              className="bg-[#2563EB] hover:bg-[#2543EB] text-black font-black text-sm py-3 rounded-sm transition-all disabled:opacity-70"
-            >
-              {subjectUpdateLoading ? "Saving..." : "Assign Subject"}
-            </button>
-          </form>
-          <p
-            className={`text-xs mt-2 ${
-              subjectUpdateStatus.toLowerCase().includes("successfully") ? "text-green-400" : "text-zinc-500"
-            }`}
-          >
-            {subjectUpdateStatus}
-          </p>
         </div>
 
         <div className={`${lastPlayedCourseObj ? "" : "hidden"} mb-14`}>

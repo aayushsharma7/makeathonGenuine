@@ -33,6 +33,18 @@ const courseModel = new mongoose.Schema({
     targetEndDate: {
         type: Date
     },
+    dailyStudyHoursGoal: {
+        type: Number,
+        default: 0
+    },
+    dailyVideosGoal: {
+        type: Number,
+        default: 0
+    },
+    weeklyCommitDays: {
+        type: Number,
+        default: 5
+    },
     completedVideos: [{
         type: Number,
     }],
