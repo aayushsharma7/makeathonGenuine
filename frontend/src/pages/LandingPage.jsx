@@ -357,7 +357,7 @@ syncProgress(web, youtube, plan);`}</pre>
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="text-sm text-zinc-500">© {new Date().getFullYear()} OpenCourse. Built for focused learning outcomes.</div>
           <a
-            href="https://github.com/Ideathon-2025/Team-Genuine"
+            href="https://github.com/aayushsharma7/makeathonGenuine"
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-2 text-sm text-zinc-400 hover:text-white transition"
