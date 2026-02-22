@@ -350,7 +350,7 @@ const CreateCourse = () => {
         }}
       />
 
-      <div className="w-full max-w-3xl relative z-10 mx-auto">
+      <div className="w-full max-w-xl relative z-10 mx-auto">
         <div className="p-4 md:p-8 overflow-hidden relative border border-white/5 rounded-md bg-[#111010]/40 backdrop-blur-sm">
           <div className="mb-8">
             <h1 className="text-4xl font-black text-white tracking-tight leading-none mb-3">

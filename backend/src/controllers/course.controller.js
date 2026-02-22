@@ -369,6 +369,66 @@ const toStartOfDay = (date = new Date()) => {
     return d;
 }
 
+const mapRecommendationActionToOverviewMode = (action = "") => {
+    const safe = `${action || ""}`.trim().toLowerCase();
+    if(safe === "skip"){
+        return "skip_with_summary";
+    }
+    if(safe === "watch_quick" || safe === "watch_2x"){
+        return "watch_partial";
+    }
+    return "watch_full";
+}
+
+const sanitizeOverviewSkipSegments = ({ segments = [], videoDurationSeconds = 0 }) => {
+    return (segments || [])
+        .map((item) => {
+            const start = Math.max(0, parseInt(item?.startSeconds || 0, 10) || 0);
+            const endRaw = parseInt(item?.endSeconds || (start + 45), 10) || (start + 45);
+            let end = Math.max(start + 15, endRaw);
+            if(videoDurationSeconds > 0){
+                end = Math.min(videoDurationSeconds, end);
+            }
+            if(end <= start){
+                return null;
+            }
+            return {
+                startSeconds: start,
+                endSeconds: end,
+                reason: `${item?.reason || ""}`.trim() || "Lower-priority revision segment."
+            };
+        })
+        .filter(Boolean)
+        .slice(0, 4);
+}
+
+const buildFallbackVideoOverview = ({ videoDoc = null, courseDoc = null, summaryText = "", videoDurationSeconds = 0 }) => {
+    const mode = mapRecommendationActionToOverviewMode(videoDoc?.recommendationAction || "watch");
+    const summaryHint = summaryText
+        ? "Summary is available if you want a quick pass before moving ahead."
+        : "Generate summary/notes if you need a fast revision pass.";
+    const shouldSuggestSkip = mode === "watch_partial";
+    return {
+        overview: `${videoDoc?.title || "This lesson"} covers core concepts relevant to your course path. ${summaryHint}`,
+        whatYouWillLearn: (videoDoc?.topicTags || []).slice(0, 4).map((item) => `${item}`.replace(/-/g, " ")),
+        recommendation: {
+            mode,
+            reason: `${videoDoc?.recommendationReason || "Based on your onboarding profile and current course flow."}`.trim(),
+            suggestedPlaybackSpeed: mode === "watch_partial" ? "1.5x" : "1.0x",
+            suggestedAction: mode === "skip_with_summary"
+                ? "Read summary + notes, then proceed."
+                : (mode === "watch_partial" ? "Watch priority sections and skip low-value revision parts." : "Watch full video once."),
+            skipSegments: shouldSuggestSkip && videoDurationSeconds > 240
+                ? [{
+                    startSeconds: Math.max(0, Math.floor(videoDurationSeconds * 0.62)),
+                    endSeconds: Math.max(0, Math.floor(videoDurationSeconds * 0.78)),
+                    reason: "Likely extended walkthrough segment; skim if concept already known."
+                }]
+                : []
+        }
+    };
+}
+
 const upsertUserDailyActivity = async ({ userId, courseId, completedMinutes = 0 }) => {
     const userDoc = await User.findById(userId);
     if(!userDoc){
@@ -3547,6 +3607,157 @@ export const updateVideoNotes = async (req,res) => {
 
     } catch (error) {
         console.error("Chat Error:", error);
+        return sendError(res, 500, "Server Error", error.message);
+    }
+}
+
+export const getVideoAiOverview = async (req,res) => {
+    try {
+        const { videoDbId = "" } = req.body;
+        if(!videoDbId){
+            return sendError(res, 400, "videoDbId is required");
+        }
+
+        const videoDoc = await Video.findOne({
+            _id: videoDbId,
+            owner: req.user.username
+        });
+        if(!videoDoc){
+            return sendError(res, 404, "Video not found");
+        }
+
+        const courseDoc = await Course.findOne({
+            _id: videoDoc.playlist,
+            owner: req.user.username
+        });
+
+        const videoDurationSeconds = parseIsoDurationToSeconds(videoDoc?.duration || "PT0S");
+        const summaryDoc = await Summary.findOne({ videoId: videoDoc.videoId }).sort({ createdAt: -1 });
+        const transcriptDoc = await ensureTranscriptDoc(videoDoc.videoId);
+        let ragContext = [];
+        const ragStatus = {
+            enabled: getPineconeConfig().isEnabled,
+            indexed: false,
+            retrievedChunks: 0,
+            fallbackReason: ""
+        };
+
+        if(transcriptDoc?.rag?.indexedAt){
+            try {
+                ragStatus.indexed = true;
+                const matches = await queryPineconeChunks({
+                    text: [videoDoc.title, videoDoc.description, "overview recommendation skip sections"].join(" "),
+                    videoId: videoDoc.videoId,
+                    courseId: videoDoc.playlist,
+                    topK: 8
+                });
+                ragContext = matches.map((item) => ({
+                    startSeconds: item.startSeconds,
+                    endSeconds: item.endSeconds,
+                    text: item.text.slice(0, 220)
+                }));
+                ragStatus.retrievedChunks = ragContext.length;
+            } catch (error) {
+                ragStatus.fallbackReason = error?.message || "rag-fallback";
+            }
+        }
+
+        const fallback = buildFallbackVideoOverview({
+            videoDoc,
+            courseDoc,
+            summaryText: summaryDoc?.summary || "",
+            videoDurationSeconds
+        });
+
+        let overview = fallback;
+        try {
+            const result = await generateText({
+                model: groq("llama-3.3-70b-versatile"),
+                temperature: 0.1,
+                messages: [
+                    {
+                        role: "system",
+                        content: `
+You are a strict JSON API for personalized video overview + recommendation.
+Return only JSON:
+{
+  "overview":"string",
+  "whatYouWillLearn":["string"],
+  "recommendation":{
+    "mode":"watch_full|watch_partial|skip_with_summary",
+    "reason":"string",
+    "suggestedPlaybackSpeed":"string",
+    "suggestedAction":"string",
+    "skipSegments":[{"startSeconds":120,"endSeconds":240,"reason":"string"}]
+  }
+}
+Rules:
+- Use learner profile + topic context.
+- Keep output concise, practical, and user-actionable.
+- If suggesting skip segments, include timestamps and reasons.
+- Do not over-skip core concept segments.
+- English only.
+- No markdown.
+`
+                    },
+                    {
+                        role: "user",
+                        content: JSON.stringify({
+                            courseSubject: courseDoc?.subject || "general",
+                            personalizationProfile: courseDoc?.personalizationProfile || {},
+                            recommendedPace: courseDoc?.recommendedPace || "",
+                            video: {
+                                title: videoDoc?.title || "",
+                                description: videoDoc?.description || "",
+                                topicTags: videoDoc?.topicTags || [],
+                                recommendationAction: videoDoc?.recommendationAction || "watch",
+                                recommendationReason: videoDoc?.recommendationReason || "",
+                                durationSeconds: videoDurationSeconds
+                            },
+                            summary: `${summaryDoc?.summary || ""}`.slice(0, 1600),
+                            ragContext
+                        })
+                    }
+                ],
+                response_format: { type: "json_object" }
+            });
+
+            const parsed = safeJsonParse(result?.text || "");
+            if(parsed && typeof parsed === "object"){
+                const modeRaw = `${parsed?.recommendation?.mode || ""}`.trim();
+                const mode = ["watch_full", "watch_partial", "skip_with_summary"].includes(modeRaw)
+                    ? modeRaw
+                    : fallback.recommendation.mode;
+                overview = {
+                    overview: `${parsed?.overview || fallback.overview}`.trim() || fallback.overview,
+                    whatYouWillLearn: Array.isArray(parsed?.whatYouWillLearn)
+                        ? parsed.whatYouWillLearn.map((item) => `${item}`.trim()).filter(Boolean).slice(0, 5)
+                        : fallback.whatYouWillLearn,
+                    recommendation: {
+                        mode,
+                        reason: `${parsed?.recommendation?.reason || fallback.recommendation.reason}`.trim() || fallback.recommendation.reason,
+                        suggestedPlaybackSpeed: `${parsed?.recommendation?.suggestedPlaybackSpeed || fallback.recommendation.suggestedPlaybackSpeed}`.trim() || fallback.recommendation.suggestedPlaybackSpeed,
+                        suggestedAction: `${parsed?.recommendation?.suggestedAction || fallback.recommendation.suggestedAction}`.trim() || fallback.recommendation.suggestedAction,
+                        skipSegments: sanitizeOverviewSkipSegments({
+                            segments: parsed?.recommendation?.skipSegments || [],
+                            videoDurationSeconds
+                        })
+                    }
+                };
+                if(!overview.recommendation.skipSegments.length && fallback.recommendation.skipSegments.length){
+                    overview.recommendation.skipSegments = fallback.recommendation.skipSegments;
+                }
+            }
+        } catch (error) {
+            overview = fallback;
+        }
+
+        return sendSuccess(res, 200, "AI overview generated successfully", {
+            ...overview,
+            ragStatus: shouldExposeRagDebug() ? ragStatus : undefined
+        });
+    } catch (error) {
+        console.error("AI Overview Error:", error);
         return sendError(res, 500, "Server Error", error.message);
     }
 }

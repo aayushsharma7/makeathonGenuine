@@ -17,15 +17,6 @@ const getSubjectLabel = (subject = "") => {
     .join(" ");
 };
 
-const DEFAULT_SUBJECT_OPTIONS = [
-  "general",
-  "dsa",
-  "web-development",
-  "ai-ml",
-  "core-cs",
-  "electronics",
-];
-
 const HomePage = () => {
   const [courses, setCourses] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -143,9 +134,13 @@ const HomePage = () => {
 
   const assignableSubjectList = useMemo(() => {
     const dynamicSubjects = Array.from(
-      new Set(courses.map((course) => course.subject || "general").filter(Boolean))
+      new Set(
+        courses
+          .map((course) => `${course.subject || "general"}`.trim().toLowerCase())
+          .filter((item) => item.length > 0)
+      )
     );
-    return Array.from(new Set([...DEFAULT_SUBJECT_OPTIONS, ...dynamicSubjects]));
+    return dynamicSubjects.length ? dynamicSubjects : ["general"];
   }, [courses]);
 
   const coursesBySubject = useMemo(() => {
@@ -338,7 +333,7 @@ const HomePage = () => {
               >
                 Start With Onboarding
               </Link>
-              <Link
+              {/* <Link
                 to="/create"
                 className="text-xs font-bold px-3 py-2 border border-white/15 rounded-sm text-zinc-300 hover:text-white hover:border-[#2563EB]/60 transition-colors"
               >
@@ -349,13 +344,13 @@ const HomePage = () => {
                 className="text-xs font-bold px-3 py-2 border border-white/15 rounded-sm text-zinc-300 hover:text-white hover:border-[#2563EB]/60 transition-colors"
               >
                 Create Custom Course
-              </Link>
+              </Link> */}
             </div>
           </div>
         </div>
 
         <div className={`${lastPlayedCourseObj ? "" : "hidden"} mb-14`}>
-          <h1 className="text-2xl md:text-3xl font-black text-white tracking-tight leading-[0.9] mb-6 ml-1 -mt-1">
+          <h1 className="text-2xl md:text-3xl font-black text-white tracking-tight leading-[0.9] mb-6 ml-1 -mt-0">
             Continue Watching
           </h1>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

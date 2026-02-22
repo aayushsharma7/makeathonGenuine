@@ -1,5 +1,5 @@
 import express from "express"
-import { addVideosToCourseController, courseController, createCustomCourseController, getAi,getVideoNotes,getSummary,updateLastPlayedCourse,getRecommendedProblems, getCourse,updateVideoNotes,deleteVideoNotes, getCourseData, getSingleCourse, getVideo, updateCourseProgess, updateVideoProgess, getVideoQuiz, submitVideoQuiz, getQuizMastery, getQuizReviewSchedule, getQuizStats, getQuizInstructorAnalytics, updateCourseSubject, updateCoursePlan, getCourseProgressInsights, rebuildCourseModulesController, prewarmVideoRagController, reviewVideoNote, updateVideoNoteMeta, getCourseNoteReviewQueue, suggestVideoNoteCategory } from "../controllers/course.controller.js";
+import { addVideosToCourseController, courseController, createCustomCourseController, getAi,getVideoNotes,getSummary,updateLastPlayedCourse,getRecommendedProblems, getCourse,updateVideoNotes,deleteVideoNotes, getCourseData, getSingleCourse, getVideo, updateCourseProgess, updateVideoProgess, getVideoQuiz, submitVideoQuiz, getQuizMastery, getQuizReviewSchedule, getQuizStats, getQuizInstructorAnalytics, updateCourseSubject, updateCoursePlan, getCourseProgressInsights, rebuildCourseModulesController, prewarmVideoRagController, reviewVideoNote, updateVideoNoteMeta, getCourseNoteReviewQueue, suggestVideoNoteCategory, getVideoAiOverview } from "../controllers/course.controller.js";
 import { authCheck } from "../middlewares/authCheck.js";
 import { planRateLimit } from "../middlewares/planRateLimit.js";
 
@@ -39,6 +39,7 @@ router.get('/quiz/analytics/:courseId', authCheck, getQuizInstructorAnalytics);
 
 
 router.post('/getVideoData',authCheck, getVideo)
+router.post('/video/ai-overview',authCheck, planRateLimit("aiTutor"), getVideoAiOverview)
 router.post('/ai',authCheck, planRateLimit("aiTutor"), getAi);
 
 export default router;

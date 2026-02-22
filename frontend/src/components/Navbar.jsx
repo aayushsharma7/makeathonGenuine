@@ -131,12 +131,9 @@ const Navbar = () => {
                 name: "Home",
                 path: "/",
               },
+              
               {
                 name: "Create",
-                path: "/create",
-              },
-              {
-                name: "Onboarding",
                 path: "/onboarding",
               },
               {

@@ -100,6 +100,9 @@ const CoursePlayer = () => {
   const chatContainerRef = useRef(null);
   const [isChatLoading, setIsChatLoading] = useState(false);
   const [aiRagStatus, setAiRagStatus] = useState(null);
+  const [aiOverview, setAiOverview] = useState(null);
+  const [aiOverviewLoading, setAiOverviewLoading] = useState(false);
+  const [aiOverviewError, setAiOverviewError] = useState("");
   const [currentVideoNotes, setCurrentVideoNotes] = useState([]);
   const [notesByCategory, setNotesByCategory] = useState({});
   const [dueNotes, setDueNotes] = useState([]);
@@ -436,6 +439,31 @@ const CoursePlayer = () => {
     }
   };
 
+  const getVideoAiOverview = async () => {
+    if (!data?.[activeIndex]?._id) {
+      return;
+    }
+    setAiOverviewLoading(true);
+    setAiOverviewError("");
+    try {
+      const response = await axios.post(
+        `${import.meta.env.VITE_API_URL}/course/video/ai-overview`,
+        {
+          videoDbId: data?.[activeIndex]?._id,
+        },
+        { withCredentials: true }
+      );
+      const payload = getApiData(response);
+      setAiOverview(payload || null);
+    } catch (error) {
+      console.log(error);
+      setAiOverviewError(error?.response?.data?.message || "Unable to generate AI overview.");
+      setAiOverview(null);
+    } finally {
+      setAiOverviewLoading(false);
+    }
+  };
+
   const prewarmCurrentVideoRag = async () => {
     const videoDbId = data?.[activeIndex]?._id;
     if (!videoDbId) {
@@ -575,6 +603,7 @@ const CoursePlayer = () => {
       return;
     }
     prewarmCurrentVideoRag();
+    getVideoAiOverview();
   }, [data, activeIndex]);
 
   const getNotesData = async () => {
@@ -1803,6 +1832,107 @@ const CoursePlayer = () => {
               <h2 className="text-md md:text-sm font-bold text-zinc-500">
                 {data[activeIndex].channelTitle}
               </h2>
+              <div className="mt-4 border border-white/10 bg-[#111010]/70 rounded-md p-4 max-w-6xl">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-[11px] font-black text-zinc-500 uppercase tracking-[0.2em]">
+                    AI Overview & Recommendations
+                  </p>
+                  {aiOverview?.ragStatus ? (
+                    <span className="text-[10px] px-2 py-0.5 rounded-sm border border-white/10 bg-white/5 text-zinc-400">
+                      RAG {aiOverview?.ragStatus?.retrievedChunks ?? 0}
+                    </span>
+                  ) : null}
+                </div>
+                {aiOverviewLoading ? (
+                  <p className="text-xs text-zinc-500 mt-2">Generating overview...</p>
+                ) : aiOverviewError ? (
+                  <p className="text-xs text-red-400 mt-2">{aiOverviewError}</p>
+                ) : (
+                  <>
+                    <p className="text-sm text-zinc-300 mt-2">
+                      {aiOverview?.overview || "Overview will appear shortly for this video."}
+                    </p>
+                    {(aiOverview?.whatYouWillLearn || []).length ? (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {(aiOverview?.whatYouWillLearn || []).map((item, idx) => (
+                          <span key={idx} className="text-[10px] px-2 py-1 rounded-sm border border-white/10 bg-white/5 text-zinc-300">
+                            {item}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+                    <div className="mt-3 rounded-sm border border-white/10 bg-black/20 p-3">
+                      <p className="text-xs text-zinc-200 font-semibold capitalize">
+                        Recommended Mode: {(aiOverview?.recommendation?.mode || "watch_full").replaceAll("_", " ")}
+                      </p>
+                      <p className="text-xs text-zinc-400 mt-1">
+                        {aiOverview?.recommendation?.reason || "Follow the recommended flow for best learning efficiency."}
+                      </p>
+                      <p className="text-[11px] text-zinc-500 mt-1">
+                        Speed: {aiOverview?.recommendation?.suggestedPlaybackSpeed || "1.0x"}
+                      </p>
+                      <p className="text-xs text-zinc-300 mt-1">
+                        {aiOverview?.recommendation?.suggestedAction || ""}
+                      </p>
+                    </div>
+                    {(aiOverview?.recommendation?.skipSegments || []).length ? (
+                      <div className="mt-3 space-y-2">
+                        <p className="text-[10px] uppercase tracking-[0.2em] text-zinc-500">Skippable Sections</p>
+                        {(aiOverview?.recommendation?.skipSegments || []).map((segment, idx) => (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => {
+                              if (playerInstanceRef?.current) {
+                                playerInstanceRef.current.currentTime = Number(segment?.startSeconds || 0);
+                                playerInstanceRef.current.play();
+                              }
+                            }}
+                            className="w-full text-left rounded-sm border border-white/10 bg-white/5 px-3 py-2 hover:bg-white/10 transition-colors"
+                          >
+                            <p className="text-xs text-zinc-200">
+                              {formatTimestampLabel(segment?.startSeconds || 0)} - {formatTimestampLabel(segment?.endSeconds || 0)}
+                            </p>
+                            <p className="text-[11px] text-zinc-500 mt-0.5">{segment?.reason}</p>
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsToolsOpen(false);
+                          setIsSummaryOpen(true);
+                          setIsIdeOpen(false);
+                          setIsExcaliOpen(false);
+                          setIsQuizOpen(false);
+                          getSummaryData();
+                        }}
+                        className="text-xs px-3 py-2 rounded-sm border border-white/10 bg-white/5 text-zinc-200 hover:bg-white/10"
+                      >
+                        Generate/Open Summary
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsToolsOpen(true);
+                          setIsCardsOpen(true);
+                          setIsContentOpen(false);
+                          setIsChatOpen(false);
+                          setIsPracticeOpen(false);
+                          setIsQuizOpen(false);
+                          setNotesLoading(true);
+                          getNotesData();
+                        }}
+                        className="text-xs px-3 py-2 rounded-sm border border-white/10 bg-white/5 text-zinc-200 hover:bg-white/10"
+                      >
+                        Open Notes
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
               <div className="mt-6 border border-white/10 bg-[#111010]/70 rounded-md p-4 max-w-6xl">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <p className="text-[11px] font-black text-zinc-500 uppercase tracking-[0.2em]">
